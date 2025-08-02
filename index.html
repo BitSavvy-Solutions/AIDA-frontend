@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIDA Widget - Demo</title>
+    
+    <!-- Directly include the CSS file from your server -->
+    <link rel="stylesheet" href="https://testaida.iverse.space/aida-widget.css">
+    
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .demo-section {
+        margin-top: 30px;
+        padding: 20px;
+        border: 1px solid #eaeaea;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AIDA Widget Demo</h1>
+    <p>This page demonstrates how to use the AIDA widget on any website.</p>
+
+    <div class="demo-section">
+      <h2>Widget Demo</h2>
+      <!-- Widget container -->
+      <div id="aida-widget-container"></div>
+    </div>
+
+    <div class="demo-section">
+      <h2>Installation Code</h2>
+      <pre><code>
+&lt;!-- AIDA Widget --&gt;
+&lt;link rel="stylesheet" href="https://testaida.iverse.space/aida-widget.css"&gt;
+&lt;div id="aida-widget-container"&gt;&lt;/div&gt;
+&lt;script src="https://testaida.iverse.space/aida-widget.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.AidaWidget) {
+      AidaWidget.render("#aida-widget-container", {
+        language: 'en',
+        user: { email: 'user@example.com' },
+        translations: {
+          transcribing: 'Transcribing...',
+          inputPlaceholder: 'Type a message to Aida...'
+        }
+      });
+    }
+  });
+&lt;/script&gt;
+      </code></pre>
+    </div>
+
+    <!-- Load the widget JavaScript -->
+    <script src="https://testaida.iverse.space/aida-widget.umd.js"></script>
+    <script>
+      // Initialize the widget
+      document.addEventListener('DOMContentLoaded', function() {
+        if (window.AidaWidget) {
+          AidaWidget.render("#aida-widget-container", {
+            language: 'en',
+            user: { email: 'demo@example.com' },
+            translations: {
+              transcribing: 'Transcribing...',
+              inputPlaceholder: 'Type a message to Aida...'
+            }
+          });
+        } else {
+          console.error('AidaWidget not loaded correctly');
+        }
+      });
+    </script>
+  </body>
+</html>
