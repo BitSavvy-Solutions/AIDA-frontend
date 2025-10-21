@@ -66,22 +66,37 @@ const createUser = async (userData) => {
 };
 
 /**
- * Fetches an existing user by their email.
+ * Fetches an existing user summary by their email to get their ID.
  * @param {string} email - The user's email.
- * @returns {Promise<object>} The user object from the backend.
+ * @returns {Promise<object>} The user summary object from the backend.
  */
 const getUserByEmail = async (email) => {
     const url = buildUrl('/users', null, { email });
     const response = await makeRequest(url, { method: 'GET' });
     const data = await parseResponse(response);
-    return data.data; // The user object is nested under a 'data' key for this endpoint
+    // API queries often return an array, even for one result. We'll take the first.
+    const result = Array.isArray(data.data) ? data.data[0] : data.data;
+    return result; 
+};
+
+/**
+ * Fetches a full user profile by their unique ID.
+ * @param {string} id - The user's unique ID.
+ * @returns {Promise<object>} The full user object from the backend.
+ */
+const getUserById = async (id) => {
+    const url = buildUrl('/users', id);
+    const response = await makeRequest(url, { method: 'GET' });
+    // Assume get-by-id returns the full object, which may or may not be wrapped in 'data'.
+    const data = await parseResponse(response);
+    return data.data || data;
 };
 
 
 /**
  * A robust, unified function to handle both registration and login for a user.
  * It first attempts to create a user. If the user already exists (409 Conflict),
- * it then fetches the existing user's full profile by email.
+ * it now fetches the user's ID via email, and then uses that ID to get the full profile.
  * @param {Object} oauthData - Data from the Google OAuth provider.
  * @returns {Promise<Object>} An object containing user data and registration status.
  */
@@ -111,7 +126,16 @@ export const registerOrLoginUser = async (oauthData) => {
         if (error instanceof APIError && error.status === 409) {
             console.log('✅ User already exists. Fetching full profile (login)...');
             try {
-                const existingUser = await getUserByEmail(userData.email);
+                // Step 1: Get the user summary (which includes the ID) by email.
+                const userSummary = await getUserByEmail(userData.email);
+                if (!userSummary || !userSummary.userId) {
+                    throw new APIError('User exists, but their ID could not be retrieved by email.', 500);
+                }
+
+                // Step 2: Use the ID from the summary to get the full profile.
+                // This ensures we get all fields like 'name' and 'profilePictureUrl'.
+                const existingUser = await getUserById(userSummary.userId);
+
                 return {
                     success: true,
                     isNewUser: false,
@@ -119,7 +143,7 @@ export const registerOrLoginUser = async (oauthData) => {
                     message: 'Welcome back!',
                 };
             } catch (fetchError) {
-                console.error('❌ CRITICAL: User exists, but fetching profile failed.', fetchError);
+                console.error('❌ CRITICAL: User exists, but fetching their full profile failed.', fetchError);
                 throw new APIError('User exists, but their profile could not be retrieved. Please try again.', 500, fetchError.data);
             }
         }

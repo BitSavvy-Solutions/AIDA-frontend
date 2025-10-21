@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { FiLogOut, FiLogIn, FiUser } from 'react-icons/fi';
+import { FiLogOut, FiLogIn } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 
 const Header = () => {
@@ -25,19 +25,8 @@ const Header = () => {
                     <div className="flex items-center space-x-4">
                         {isAuthenticated && user ? (
                             <div className="flex items-center space-x-3">
-                                {user.picture ? (
-                                    <img 
-                                        src={user.picture} 
-                                        alt={user.name || 'User'} 
-                                        className="w-8 h-8 rounded-full border-2 border-aida-border"
-                                    />
-                                ) : (
-                                    <div className="w-8 h-8 rounded-full bg-aida-pink text-white flex items-center justify-center">
-                                        <FiUser className="w-4 h-4" />
-                                    </div>
-                                )}
                                 <span className="text-sm font-medium text-aida-dark hidden sm:block">
-                                    {user.name || user.email}
+                                    {user.name}
                                 </span>
                                 <button 
                                     onClick={handleLogout} 
