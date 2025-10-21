@@ -38,17 +38,17 @@ const AidaPage = () => {
     ];
 
     return (
-        <div className="bg-gray-50 min-h-screen">
+        <div className="bg-aida-light min-h-screen">
             <AidaHeader />
             <main className="py-12 sm:py-16">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                         {/* Left Side: AIDA Info */}
                         <div className="text-center lg:text-left">
-                            <h1 className="text-4xl md:text-5xl font-bold text-gray-900">
+                            <h1 className="text-4xl md:text-5xl font-bold text-aida-dark">
                                 AIDA: The Open AI Interface
                             </h1>
-                            <p className="mt-4 text-lg text-gray-600 max-w-xl lg:mx-0 mx-auto">
+                            <p className="mt-4 text-lg text-aida-text-muted max-w-xl lg:mx-0 mx-auto">
                                 An open-source, powerful, and free-to-use chat interface designed for developers, researchers, and AI enthusiasts.
                                 Experiment with multiple large language models in one clean interface.
                             </p>
@@ -57,7 +57,7 @@ const AidaPage = () => {
                                   href="https://github.com/aitutor-project"
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center px-6 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors"
+                                  className="inline-flex items-center px-6 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors"
                                 >
                                     <FaGithub className="w-5 h-5 mr-2" />
                                     View on GitHub
@@ -68,12 +68,12 @@ const AidaPage = () => {
                             <div className="mt-12 space-y-8">
                                 {features.map((feature, index) => (
                                     <div key={index} className="flex items-start space-x-4">
-                                        <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-[#FF5F90]/20 to-red-500/20 text-[#FF5F90] rounded-lg flex items-center justify-center">
+                                        <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-[#FF5F90]/20 to-red-500/20 text-aida-pink rounded-lg flex items-center justify-center">
                                             <feature.icon className="w-6 h-6" />
                                         </div>
                                         <div>
-                                            <h3 className="text-lg font-semibold text-gray-900">{feature.title}</h3>
-                                            <p className="mt-1 text-gray-600">{feature.description}</p>
+                                            <h3 className="text-lg font-semibold text-aida-dark">{feature.title}</h3>
+                                            <p className="mt-1 text-aida-text-muted">{feature.description}</p>
                                         </div>
                                     </div>
                                 ))}

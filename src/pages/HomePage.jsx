@@ -40,7 +40,7 @@ const HomePage = () => {
                         <h1 className="text-4xl md:text-5xl font-bold text-aida-dark">
                             AIDA: The Open AI Interface
                         </h1>
-                        <p className="mt-4 text-lg text-gray-600 mx-auto">
+                        <p className="mt-4 text-lg text-aida-text-muted mx-auto">
                             We are building an awesome artificially intelligent digital assistant that is portable, private, and built by the people, for the people. Our mission is to democratize access to knowledge, information, and AI for everyone.
                         </p>
                         
@@ -60,12 +60,12 @@ const HomePage = () => {
                         <div className="mt-16 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-12">
                             {features.map((feature, index) => (
                                 <div key={index} className="flex items-start space-x-4 text-left">
-                                    <div className="flex-shrink-0 w-12 h-12 bg-white border shadow-sm text-aida-pink rounded-lg flex items-center justify-center">
+                                    <div className="flex-shrink-0 w-12 h-12 bg-aida-card border border-aida-border shadow-lg text-aida-pink rounded-lg flex items-center justify-center">
                                         <feature.icon className="w-6 h-6" />
                                     </div>
                                     <div>
                                         <h3 className="text-lg font-semibold text-aida-dark">{feature.title}</h3>
-                                        <p className="mt-1 text-gray-500">{feature.description}</p>
+                                        <p className="mt-1 text-aida-text-muted">{feature.description}</p>
                                     </div>
                                 </div>
                             ))}

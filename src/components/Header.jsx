@@ -14,7 +14,7 @@ const Header = () => {
     };
 
     return (
-        <header className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50">
+        <header className="bg-aida-card/80 backdrop-blur-md border-b border-aida-border sticky top-0 z-50">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between items-center h-16">
                     <Link to="/" className="flex items-center space-x-2">
@@ -28,10 +28,10 @@ const Header = () => {
                                 {user?.picture && (
                                      <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full"/>
                                 )}
-                                <span className="text-sm font-medium text-gray-700 hidden sm:block">
+                                <span className="text-sm font-medium text-aida-dark hidden sm:block">
                                     {user.name}
                                 </span>
-                                <button onClick={handleLogout} className="text-gray-500 hover:text-aida-pink">
+                                <button onClick={handleLogout} className="text-aida-text-muted hover:text-aida-pink">
                                     <FiLogOut className="w-5 h-5"/>
                                 </button>
                             </div>

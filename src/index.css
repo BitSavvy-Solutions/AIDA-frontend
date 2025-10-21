@@ -7,20 +7,22 @@ body {
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Tailwind will now apply the new dark colors defined in tailwind.config.js */
   @apply bg-aida-light text-aida-dark;
 }
 
-/* Custom scrollbar to match the theme */
+/* Custom scrollbar to match the new dark theme */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #1F2937; /* Dark track background */
 }
 ::-webkit-scrollbar-thumb {
-  background: #FF5F90;
-  border-radius: 4px;
+  background: #4B5563; /* Muted gray thumb */
+  border-radius: 5px;
+  border: 2px solid #1F2937; /* Creates a padding effect */
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #e55a5a;
+  background: #6B7280; /* Lighter gray on hover */
 }

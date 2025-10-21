@@ -4,10 +4,11 @@
     width: 100%;
     max-width: 600px;
     margin: 0 auto;
-    background-color: #fff;
+    background-color: #1F2937; /* Dark card background */
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
     overflow: hidden;
+    color: #E5E7EB; /* Light text */
   }
   
   .aida-config-header {
@@ -64,10 +65,10 @@
   .aida-config-section h3 {
     font-size: 1rem;
     font-weight: 600;
-    color: #374151;
+    color: #E5E7EB; /* Light header text */
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid #374151; /* Darker border */
   }
   
   .aida-config-field {
@@ -80,7 +81,7 @@
     gap: 8px;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #4b5563;
+    color: #D1D5DB; /* Lighter label text */
     margin-bottom: 6px;
   }
   
@@ -92,7 +93,9 @@
   .aida-config-field select {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid #d1d5db;
+    background-color: #111827; /* Darker input background */
+    color: #E5E7EB;
+    border: 1px solid #4B5563; /* Muted border */
     border-radius: 6px;
     font-size: 0.875rem;
     transition: border-color 0.2s;
@@ -109,14 +112,14 @@
     display: block;
     margin-top: 4px;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: #9CA3AF; /* Muted helper text */
   }
   
   .aida-select {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239CA3AF' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 10px center;
     background-repeat: no-repeat;
     background-size: 20px 20px;
@@ -134,7 +137,7 @@
     align-items: center;
     gap: 8px;
     font-size: 0.875rem;
-    color: #4b5563;
+    color: #D1D5DB;
     cursor: pointer;
   }
   
@@ -154,9 +157,9 @@
   
   .aida-cancel-btn {
     padding: 10px 16px;
-    background-color: white;
-    color: #4b5563;
-    border: 1px solid #d1d5db;
+    background-color: transparent;
+    color: #D1D5DB;
+    border: 1px solid #4B5563;
     border-radius: 6px;
     font-size: 0.875rem;
     font-weight: 500;
@@ -165,7 +168,7 @@
   }
   
   .aida-cancel-btn:hover {
-    background-color: #f3f4f6;
+    background-color: rgba(255, 255, 255, 0.05);
   }
   
   .aida-save-btn {

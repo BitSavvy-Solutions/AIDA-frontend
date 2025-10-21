@@ -46,24 +46,24 @@ const LoginPage = () => {
 
     return (
         <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-            <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-xl shadow-lg border">
+            <div className="w-full max-w-md p-8 space-y-8 bg-aida-card rounded-xl shadow-lg border border-aida-border">
                 <div className="text-center">
                     <FiLogIn className="mx-auto h-12 w-12 text-aida-pink" />
-                    <h2 className="mt-6 text-3xl font-bold text-gray-900">Sign in to AIDA</h2>
-                    <p className="mt-2 text-sm text-gray-600">to save conversations and track usage</p>
+                    <h2 className="mt-6 text-3xl font-bold text-aida-dark">Sign in to AIDA</h2>
+                    <p className="mt-2 text-sm text-aida-text-muted">to save conversations and track usage</p>
                 </div>
                 
                 {error && (
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative flex items-center">
+                    <div className="bg-red-200/20 border border-red-400 text-red-300 px-4 py-3 rounded-lg relative flex items-center">
                         <FiAlertCircle className="mr-2"/>
                         <span className="block sm:inline">{error}</span>
                     </div>
                 )}
                 
                 <button
-                    onClick={handleGoogleLogin}
+                    onClick={() => handleGoogleLogin()}
                     disabled={authLoading}
-                    className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    className="w-full flex items-center justify-center px-4 py-3 border border-aida-border rounded-md shadow-sm text-base font-medium text-aida-dark bg-aida-light hover:bg-opacity-80 disabled:opacity-50 transition-colors"
                 >
                     <FcGoogle className="w-6 h-6 mr-3" />
                     Sign in with Google
