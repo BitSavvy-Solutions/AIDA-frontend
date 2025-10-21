@@ -1,3 +1,4 @@
+/* src/pages/LoginPage.jsx */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
@@ -10,9 +11,13 @@ const LoginPage = () => {
     const { processLogin, isAuthenticated, authLoading } = useAuth();
     const navigate = useNavigate();
 
+    // This effect is now ONLY to redirect an already-logged-in user
+    // who happens to land on the /login page. It no longer interferes
+    // with the post-login navigation flow.
     useEffect(() => {
         if (!authLoading && isAuthenticated) {
-            navigate('/');
+            console.log('User is already authenticated. Redirecting from login page.');
+            navigate('/', { replace: true });
         }
     }, [isAuthenticated, authLoading, navigate]);
 
@@ -25,6 +30,7 @@ const LoginPage = () => {
                 });
                 const userInfo = await res.json();
                 
+                // This function now exclusively controls the post-login redirect.
                 await processLogin({
                     id: userInfo.id,
                     email: userInfo.email,
@@ -33,7 +39,7 @@ const LoginPage = () => {
                     provider: 'google'
                 });
 
-                navigate('/'); // Redirect to home page after login
+                navigate('/', { replace: true }); // Redirect to home page after login
             } catch (err) {
                 console.error("Google login process failed:", err);
                 setError('Failed to process login. Please try again.');
@@ -44,6 +50,16 @@ const LoginPage = () => {
         },
     });
 
+    // If the user is already logged in, we can show a loading/redirecting state
+    // instead of the login form while the effect redirects them.
+    if (authLoading || isAuthenticated) {
+        return (
+            <div className="flex items-center justify-center py-12 px-4">
+                <p className="text-aida-text-muted">Redirecting...</p>
+            </div>
+        );
+    }
+    
     return (
         <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div className="w-full max-w-md p-8 space-y-8 bg-aida-card rounded-xl shadow-lg border border-aida-border">
@@ -62,7 +78,7 @@ const LoginPage = () => {
                 
                 <button
                     onClick={() => handleGoogleLogin()}
-                    disabled={authLoading}
+                    disabled={authLoading} // Although we render "Redirecting", this is still good practice
                     className="w-full flex items-center justify-center px-4 py-3 border border-aida-border rounded-md shadow-sm text-base font-medium text-aida-dark bg-aida-light hover:bg-opacity-80 disabled:opacity-50 transition-colors"
                 >
                     <FcGoogle className="w-6 h-6 mr-3" />

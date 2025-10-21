@@ -7,7 +7,8 @@ import ChatWidgetLoader from '../components/ChatWidgetLoader';
 
 const HomePage = () => {
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    // Get isAuthenticated to control the key
+    const { isAuthenticated, authLoading } = useAuth();
 
     const handleCtaClick = () => {
         navigate(isAuthenticated ? '/' : '/login');
@@ -70,9 +71,18 @@ const HomePage = () => {
                                 </div>
                             ))}
                         </div>
-                                            <div>
-                        <ChatWidgetLoader />
-                    </div>
+                        <div className="mt-16">
+                            {/* 
+                                KEY CHANGE HERE:
+                                We pass a `key` prop that changes based on the auth status.
+                                When `isAuthenticated` flips from false to true, the key changes
+                                from 'anonymous' to 'authenticated', forcing React to
+                                create a brand new ChatWidgetLoader instance.
+                            */}
+                           {!authLoading && (
+                                <ChatWidgetLoader key={isAuthenticated ? 'authenticated' : 'anonymous'} />
+                           )}
+                        </div>
                     </div>
                 </div>
             </div>

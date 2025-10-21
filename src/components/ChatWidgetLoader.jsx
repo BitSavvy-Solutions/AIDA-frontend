@@ -2,57 +2,70 @@ import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 const ChatWidgetLoader = () => {
+    // We still need user/auth state to know *what* to render
     const { user, isAuthenticated, authLoading } = useAuth();
 
     useEffect(() => {
-        // Only render if auth state is settled and widget is available
-        if (!authLoading && window.AidaWidget) {
-            let widgetUser = { email: 'demo@example.com', name: 'Guest' };
+        // Because of the `key` prop, this effect runs once on mount for a clean component.
+        // It will run again only if the component is completely re-mounted.
 
-            if (isAuthenticated && user) {
-                console.log(`[AIDA] Rendering widget for authenticated user: ${user.id}`);
-                widgetUser = {
-                    id: user.id, // The essential persistent ID from your backend
-                    email: user.email,
-                    name: user.name,
-                };
-            } else {
-                console.log('[AIDA] Rendering widget for anonymous user.');
-            }
-
-            // Render the widget with the appropriate user object
-            window.AidaWidget.render("#aida-widget-container", {
-                language: 'en',
-                user: widgetUser,
-                translations: {
-                    transcribing: 'Transcribing...',
-                    inputPlaceholder: 'Type a message to Aida...'
-                },
-            });
+        if (authLoading || !window.AidaWidget) {
+            return;
         }
 
-        // Cleanup function to destroy the widget on component unmount
-        return () => {
-            if (window.AidaWidget && window.AidaWidget.destroy) {
-                const container = document.getElementById('aida-widget-container');
-                if (container && container.innerHTML) {
-                    console.log('[AIDA] Destroying widget instance.');
-                    window.AidaWidget.destroy("#aida-widget-container");
+        let widgetUser = { email: 'demo@example.com', name: 'Guest' };
+
+        if (isAuthenticated && user) {
+            console.log(`[AIDA] Rendering widget for AUTHENTICATED user: ${user.id}`);
+            widgetUser = {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+            };
+        } else {
+            console.log('[AIDA] Rendering widget for ANONYMOUS user.');
+        }
+
+        const container = document.getElementById('aida-widget-container');
+
+        if (container) {
+             // A small delay can help ensure all scripts are settled
+            const timer = setTimeout(() => {
+                try {
+                    window.AidaWidget.render("#aida-widget-container", {
+                        language: 'en',
+                        user: widgetUser,
+                        translations: {
+                            transcribing: 'Transcribing...',
+                            inputPlaceholder: 'Type a message to Aida...'
+                        },
+                    });
+                     console.log('[AIDA] Widget successfully rendered.');
+                } catch(e) {
+                    console.error('[AIDA] Failed to render widget:', e);
                 }
-            }
-        };
-    }, [isAuthenticated, user, authLoading]); // Rerender if auth state changes
+            }, 50); // Small delay for safety
+
+            // No cleanup needed because the parent div will be destroyed by React
+            return () => clearTimeout(timer);
+        }
+
+    }, [isAuthenticated, user, authLoading]); // Dependencies are correct
 
     if (authLoading) {
         return (
-            <div className="h-full min-h-[600px] bg-gray-200 rounded-lg animate-pulse flex items-center justify-center">
-                <p className="text-gray-500">Initializing AIDA...</p>
+            <div className="h-full min-h-[600px] w-full bg-gray-800/50 rounded-lg animate-pulse flex items-center justify-center">
+                <p className="text-gray-400">Initializing AIDA...</p>
             </div>
-        )
+        );
     }
 
+    // The container now lives here. It gets created and destroyed with the component.
     return (
-        <div id="aida-widget-container">
+        <div 
+            id="aida-widget-container"
+            className="min-h-[600px] w-full"
+        >
             {/* The AIDA Widget will be rendered here by its script */}
         </div>
     );

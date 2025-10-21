@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { FiLogOut, FiLogIn } from 'react-icons/fi';
+import { FiLogOut, FiLogIn, FiUser } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 
 const Header = () => {
@@ -23,22 +23,34 @@ const Header = () => {
                     </Link>
                     
                     <div className="flex items-center space-x-4">
-                        {isAuthenticated ? (
+                        {isAuthenticated && user ? (
                             <div className="flex items-center space-x-3">
-                                {user?.picture && (
-                                     <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full"/>
+                                {user.picture ? (
+                                    <img 
+                                        src={user.picture} 
+                                        alt={user.name || 'User'} 
+                                        className="w-8 h-8 rounded-full border-2 border-aida-border"
+                                    />
+                                ) : (
+                                    <div className="w-8 h-8 rounded-full bg-aida-pink text-white flex items-center justify-center">
+                                        <FiUser className="w-4 h-4" />
+                                    </div>
                                 )}
                                 <span className="text-sm font-medium text-aida-dark hidden sm:block">
-                                    {user.name}
+                                    {user.name || user.email}
                                 </span>
-                                <button onClick={handleLogout} className="text-aida-text-muted hover:text-aida-pink">
+                                <button 
+                                    onClick={handleLogout} 
+                                    className="text-aida-text-muted hover:text-aida-pink transition-colors"
+                                    title="Logout"
+                                >
                                     <FiLogOut className="w-5 h-5"/>
                                 </button>
                             </div>
                         ) : (
                             <Link
                                 to="/login"
-                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-aida-pink rounded-lg hover:opacity-90"
+                                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-aida-pink rounded-lg hover:opacity-90 transition-opacity"
                             >
                                 <FiLogIn className="mr-2 h-4 w-4"/>
                                 Login
