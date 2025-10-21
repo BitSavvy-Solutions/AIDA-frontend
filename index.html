@@ -3,31 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AIDA Widget</title>
+    <title>AIDA - Your Open AI Interface</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- AIDA Widget CSS -->
     <link rel="stylesheet" href="https://testaida.iverse.space/aida-widget.css">
   </head>
   <body>
-    <!-- AIDA Widget container -->
-    <div id="aida-widget-container"></div>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    
+    <!-- React App Root Container -->
+    <div id="root"></div>
     
     <!-- AIDA Widget JavaScript -->
     <script src="https://testaida.iverse.space/aida-widget.umd.js"></script>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        if (window.AidaWidget) {
-          AidaWidget.render("#aida-widget-container", {
-            language: 'en',
-            user: { email: 'demo@example.com' },
-            translations: {
-              transcribing: 'Transcribing...',
-              inputPlaceholder: 'Type a message to Aida...'
-            }
-          });
-        }
-      });
-    </script>
-    <script type="module" src="/src/main.jsx"></script>
+
+    <!-- React App Entry Script -->
+    <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>
