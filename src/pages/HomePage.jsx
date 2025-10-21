@@ -2,13 +2,13 @@ import React from 'react';
 import { FiCpu, FiLogIn, FiMic, FiUsers } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import ChatWidgetLoader from '../components/ChatWidgetLoader';
 
+// The ChatWidgetLoader component is no longer needed here.
 
 const HomePage = () => {
     const navigate = useNavigate();
-    // Get isAuthenticated to control the key
-    const { isAuthenticated, authLoading } = useAuth();
+    // Get isAuthenticated to control the login button visibility
+    const { isAuthenticated } = useAuth();
 
     const handleCtaClick = () => {
         navigate(isAuthenticated ? '/' : '/login');
@@ -35,7 +35,6 @@ const HomePage = () => {
     return (
         <div className="bg-aida-light">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-                {/* Changed to a single centered column layout */}
                 <div className="flex justify-center">
                     <div className="w-full max-w-3xl text-center">
                         <h1 className="text-4xl md:text-5xl font-bold text-aida-dark">
@@ -71,22 +70,12 @@ const HomePage = () => {
                                 </div>
                             ))}
                         </div>
-                        <div className="mt-16">
-                            {/* 
-                                KEY CHANGE HERE:
-                                We pass a `key` prop that changes based on the auth status.
-                                When `isAuthenticated` flips from false to true, the key changes
-                                from 'anonymous' to 'authenticated', forcing React to
-                                create a brand new ChatWidgetLoader instance.
-                            */}
-                           {!authLoading && (
-                                <ChatWidgetLoader key={isAuthenticated ? 'authenticated' : 'anonymous'} />
-                           )}
-                        </div>
+                        
+                        {/* The chat widget section has been removed from here. */}
+                        {/* It is now rendered globally and persistently by App.jsx. */}
                     </div>
                 </div>
             </div>
-            
         </div>
     );
 };
