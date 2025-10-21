@@ -12,8 +12,6 @@ const Footer = () => {
                     rel="noopener noreferrer"
                     className="flex items-center space-x-2 hover:text-aida-pink transition-colors"
                 >
-                    <FiGithub />
-                    <span>View on GitHub</span>
                 </a>
             </div>
         </footer>

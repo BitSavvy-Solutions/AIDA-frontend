@@ -52,7 +52,7 @@ const ChatWidgetLoader = () => {
     }
 
     return (
-        <div id="aida-widget-container" className="rounded-2xl shadow-2xl border bg-white overflow-hidden h-full min-h-[70vh]">
+        <div id="aida-widget-container">
             {/* The AIDA Widget will be rendered here by its script */}
         </div>
     );
