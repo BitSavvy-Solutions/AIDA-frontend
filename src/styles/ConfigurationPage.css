@@ -1,0 +1,215 @@
+/* Configuration Page Styles */
+.aida-config-container {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+  
+  .aida-config-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background-color: #FF5F90;
+    color: white;
+  }
+  
+  .aida-config-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .aida-config-title h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+  
+  .config-icon {
+    font-size: 1.25rem;
+  }
+  
+  .aida-config-close {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+  }
+  
+  .aida-config-close:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+  
+  .aida-config-form {
+    padding: 20px;
+  }
+  
+  .aida-config-section {
+    margin-bottom: 24px;
+  }
+  
+  .aida-config-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .aida-config-field {
+    margin-bottom: 16px;
+  }
+  
+  .aida-config-field label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4b5563;
+    margin-bottom: 6px;
+  }
+  
+  .field-icon {
+    color: #FF5F90;
+  }
+  
+  .aida-config-field input,
+  .aida-config-field select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    transition: border-color 0.2s;
+  }
+  
+  .aida-config-field input:focus,
+  .aida-config-field select:focus {
+    outline: none;
+    border-color: #FF5F90;
+    box-shadow: 0 0 0 2px rgba(255, 95, 144, 0.2);
+  }
+  
+  .aida-config-field small {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+  
+  .aida-select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 10px center;
+    background-repeat: no-repeat;
+    background-size: 20px 20px;
+    padding-right: 40px !important;
+  }
+  
+  .aida-config-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .aida-config-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: #4b5563;
+    cursor: pointer;
+  }
+  
+  .aida-config-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    accent-color: #FF5F90;
+  }
+  
+  .aida-config-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  
+  .aida-cancel-btn {
+    padding: 10px 16px;
+    background-color: white;
+    color: #4b5563;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .aida-cancel-btn:hover {
+    background-color: #f3f4f6;
+  }
+  
+  .aida-save-btn {
+    padding: 10px 16px;
+    background-color: #FF5F90;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .aida-save-btn:hover {
+    background-color: #e55a5a;
+  }
+  
+  .btn-icon {
+    font-size: 1rem;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 480px) {
+    .aida-config-container {
+      max-width: 100%;
+      border-radius: 0;
+    }
+    
+    .aida-config-form {
+      padding: 16px;
+    }
+    
+    .aida-config-actions {
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .aida-cancel-btn,
+    .aida-save-btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
