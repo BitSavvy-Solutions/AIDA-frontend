@@ -36,7 +36,7 @@ const AidaWidget = () => {
         const container = document.getElementById(WIDGET_CONTAINER_ID);
 
         if (container) {
-             // A small delay helps ensure all scripts are settled before rendering.
+            // A small delay helps ensure all scripts are settled before rendering.
             const timer = setTimeout(() => {
                 try {
                     // Render the widget into the predefined global container.
@@ -47,9 +47,16 @@ const AidaWidget = () => {
                             transcribing: 'Transcribing...',
                             inputPlaceholder: 'Type a message to Aida...'
                         },
+                        features: {
+                            paymentLink: {
+                                show: true,
+                                url: 'https://buy.stripe.com/5kQ8wO11A3y97tjcThabK00',
+                                text: '' // Custom text for dev environment
+                            }
+                        }
                     });
-                     console.log('[AIDA] Universal widget successfully rendered.');
-                } catch(e) {
+                    console.log('[AIDA] Universal widget successfully rendered.');
+                } catch (e) {
                     console.error('[AIDA] Failed to render universal widget:', e);
                 }
             }, 50); // Small delay for safety
