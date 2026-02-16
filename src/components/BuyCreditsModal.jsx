@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FiX, FiCreditCard, FiLoader, FiDollarSign } from 'react-icons/fi';
 import creditService from '../services/creditService';
 
-const BuyCreditsModal = ({ userId, isOpen, onClose }) => {
+const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [customAmount, setCustomAmount] = useState('');
@@ -19,6 +19,8 @@ const BuyCreditsModal = ({ userId, isOpen, onClose }) => {
         setLoading(true);
         setError('');
         try {
+            // --- SAVE THE OLD BALANCE BEFORE LEAVING ---
+            localStorage.setItem('aida_pre_payment_balance', currentBalance || 0);
             // 1. Call your Azure Backend
             const stripeUrl = await creditService.createCheckoutSession(userId, amount);
             // 2. Redirect to Stripe
