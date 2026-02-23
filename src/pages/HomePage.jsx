@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiCpu, FiLogIn, FiMic, FiUsers } from 'react-icons/fi';
+import { FiCpu, FiLogIn, FiMic, FiUsers, FiLoader } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -8,11 +8,20 @@ import { useAuth } from '../contexts/AuthContext';
 const HomePage = () => {
     const navigate = useNavigate();
     // Get isAuthenticated to control the login button visibility
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, authLoading } = useAuth();
 
     const handleCtaClick = () => {
         navigate(isAuthenticated ? '/' : '/login');
     };
+
+    // --- FIX for redirect logout: Show a loading state while checking LocalStorage ---
+    if (authLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-aida-light">
+                <FiLoader className="w-8 h-8 text-aida-pink animate-spin" />
+            </div>
+        );
+    }
 
     const features = [
         {

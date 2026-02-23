@@ -3,9 +3,21 @@
  * Configures the backend API connection.
  */
 
+// Detect if the app is running in a development environment (localhost)
+const isDevelopment = import.meta.env.MODE === 'development';
+
 const config = {
-    // URL for your Azure Functions backend
-    AZURE_FUNCTIONS_URL: 'https://aitutfunc.azurewebsites.net/api',
+    // AUTOMATIC SWITCHING:
+    // If Local: Uses localhost:7071 (Standard Azure Function local port)
+    // If Prod: Uses your live Azure URL
+    AZURE_FUNCTIONS_URL: isDevelopment
+        ? 'http://localhost:7071/api' 
+        : 'https://aitutfunc.azurewebsites.net/api',
+
+    // Frontend URL for redirects (Stripe success/cancel)
+    FRONTEND_URL: isDevelopment
+        ? 'http://localhost:5173'
+        : window.location.origin,
     
     // The master key for your Azure Functions host.
     // It is recommended to use a single host key for simplicity.
