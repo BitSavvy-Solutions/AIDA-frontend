@@ -489,7 +489,7 @@ const HomePage = () => {
                 {/* Headline */}
                 <h1 className="text-5xl md:text-6xl font-bold text-aida-dark leading-tight tracking-tight">
                     Multiple AI Models.{' '}
-                    <span className="text-aida-pink">One Interface.</span>{' '}
+                    <span className="text-aida-pink">Open Source Interface.</span>{' '}
                     No Daily Limits.
                 </h1>
 
