@@ -8,7 +8,8 @@ import {
     FiDollarSign,
     FiLock,
     FiLogIn,
-    FiGithub
+    FiGithub,
+    FiHardDrive,
 } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 
@@ -38,17 +39,11 @@ const HomePage = () => {
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
 
-    /**
-     * Programmatically opens the AIDA chat widget.
-     * The widget renders a launcher button (.aida-widget-launcher button) only
-     * when it is closed, so clicking it is safe -- if already open, nothing happens.
-     */
     const handleStartChatting = useCallback(() => {
         const launcherBtn = document.querySelector('.aida-widget-launcher button');
         if (launcherBtn) {
             launcherBtn.click();
         }
-        // If launcherBtn is null, the widget is already open -- user can see it.
     }, []);
 
     // ── Data ──────────────────────────────────────────────────────────────────
@@ -76,10 +71,11 @@ const HomePage = () => {
         },
         {
             icon: FiLock,
-            title: 'Keep Memories Private',
+            title: 'Your Privacy Comes First',
             description:
-                "We don't store or sell your conversations. Your chats stay between " +
-                'you and the AI. Note: the providers you choose have their own data policies.',
+                "Conversations are never sent to our servers or sold to anyone. " +
+                'Your chat history is saved privately in your own browser. ' +
+                'Note: the AI providers you choose have their own data policies.',
             colorClass:  'text-aida-pink',
             bgClass:     'bg-aida-pink/10',
             borderClass: 'border-aida-pink/20',
@@ -90,18 +86,38 @@ const HomePage = () => {
         {
             number: '01',
             title: 'Click Start Chatting',
-            description: 'No account, no forms. The chat widget opens in the bottom-right corner instantly.',
+            description:
+                'No account needed. The chat widget opens in the bottom-right corner instantly.',
         },
         {
             number: '02',
             title: 'Pick Your AI',
-            description: 'Choose from DeepSeek, Claude, GPT-4, Llama, Gemini, and more from the model selector.',
+            description:
+                'Choose from DeepSeek, Gemini Flash, Claude, Gemini Pro, and more from the model selector.',
         },
         {
             number: '03',
             title: 'Start Talking',
-            description: 'Ask anything. Switch models anytime. Log in to unlock advanced models and save history.',
+            description:
+                'Ask anything. Switch models anytime. Your conversation is saved privately in your browser — no account required.',
         },
+    ];
+
+    // ── Guest feature list ────────────────────────────────────────────────────
+
+    const guestFeatures = [
+        'DeepSeek — fast, capable, and free to try',
+        'Gemini Flash — Google\'s speedy lightweight model',
+        'No registration, no forms, no waiting',
+        'Chat history saved privately in your browser',
+    ];
+
+    const authFeatures = [
+        'Everything in the free tier',
+        'Claude — Anthropic\'s powerful reasoning model',
+        'Gemini Pro — Google\'s full-power model',
+        'Image generation',
+        'Chat history saved privately in your browser',
     ];
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -132,9 +148,9 @@ const HomePage = () => {
 
                 {/* Sub-headline */}
                 <p className="mt-6 text-xl text-aida-text-muted max-w-2xl mx-auto leading-relaxed">
-                    Use AIDA to access the world's leading AI models including DeepSeek,
-                    Claude, GPT-4, and Llama, all from one clean interface.
-                    No subscriptions ever. No daily limits. Your conversations stay private.
+                    Use AIDA to access leading AI models — DeepSeek, Gemini Flash, Claude,
+                    Gemini Pro, and more — all from one clean interface. No subscriptions.
+                    No daily limits. Your conversations stay private in your browser.
                 </p>
 
                 {/* CTAs */}
@@ -144,7 +160,7 @@ const HomePage = () => {
                         className="inline-flex items-center px-8 py-4 bg-aida-pink text-white font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform text-lg"
                     >
                         <FiMessageSquare className="w-5 h-5 mr-2" />
-                        Start Chatting - It's Free
+                        Start Chatting — It's Free
                     </button>
 
                     <button
@@ -161,7 +177,7 @@ const HomePage = () => {
                     No account needed to get started.{' '}
                     {isAuthenticated ? (
                         <span className="text-green-400 font-medium">
-                            You're logged in - advanced models are available.
+                            You're logged in — advanced models and image generation are available.
                         </span>
                     ) : (
                         <>
@@ -171,7 +187,7 @@ const HomePage = () => {
                             >
                                 Log in
                             </button>
-                            {' '}to unlock advanced models and save your history.
+                            {' '}to unlock Claude, Gemini Pro, and image generation.
                         </>
                     )}
                 </p>
@@ -236,7 +252,7 @@ const HomePage = () => {
                             Choose How You Start
                         </h2>
                         <p className="mt-3 text-aida-text-muted">
-                            Jump straight in, or unlock the full experience.
+                            Jump straight in, or unlock smarter models with a free account.
                         </p>
                     </div>
 
@@ -245,18 +261,17 @@ const HomePage = () => {
                         {/* ── Guest card ── */}
                         <div className="p-8 rounded-2xl border border-aida-border bg-aida-light flex flex-col">
                             <div className="text-3xl mb-4">👤</div>
-                            <h3 className="text-xl font-bold text-aida-dark mb-4">
+                            <h3 className="text-xl font-bold text-aida-dark mb-1">
                                 Without an Account
                             </h3>
+                            <p className="text-sm text-aida-text-muted mb-5">
+                                Start chatting in seconds, no sign-up required.
+                            </p>
                             <ul className="space-y-3 text-aida-text-muted flex-grow">
-                                {[
-                                    'Access basic AI models instantly',
-                                    'Start chatting in seconds',
-                                    'No registration required',
-                                ].map((item) => (
+                                {guestFeatures.map((item) => (
                                     <li key={item} className="flex items-start gap-2">
                                         <span className="text-green-400 mt-0.5 flex-shrink-0">✓</span>
-                                        {item}
+                                        <span>{item}</span>
                                     </li>
                                 ))}
                             </ul>
@@ -274,18 +289,17 @@ const HomePage = () => {
                                 Recommended
                             </span>
                             <div className="text-3xl mb-4">⚡</div>
-                            <h3 className="text-xl font-bold text-aida-dark mb-4">
+                            <h3 className="text-xl font-bold text-aida-dark mb-1">
                                 With a Free Account
                             </h3>
+                            <p className="text-sm text-aida-text-muted mb-5">
+                                Unlock smarter models and image generation — still free.
+                            </p>
                             <ul className="space-y-3 text-aida-text-muted flex-grow">
-                                {[
-                                    'Advanced models - GPT-4, Claude 3, DeepSeek, and more',
-                                    'Save and revisit conversation history',
-                                    'Personalized experience across sessions',
-                                ].map((item) => (
+                                {authFeatures.map((item) => (
                                     <li key={item} className="flex items-start gap-2">
                                         <span className="text-aida-pink mt-0.5 flex-shrink-0">✓</span>
-                                        {item}
+                                        <span>{item}</span>
                                     </li>
                                 ))}
                             </ul>
@@ -307,6 +321,15 @@ const HomePage = () => {
                             )}
                         </div>
                     </div>
+
+                    {/* ── Browser memory note ── */}
+                    <div className="mt-10 max-w-3xl mx-auto flex items-start gap-3 px-5 py-4 rounded-xl bg-aida-light border border-aida-border">
+                        <FiHardDrive className="w-5 h-5 text-aida-text-muted flex-shrink-0 mt-0.5" />
+                        <p className="text-sm text-aida-text-muted leading-relaxed">
+                            <span className="font-semibold text-aida-dark">Your chat history is yours.</span>{' '}
+                            Conversations are saved privately in your browser's local storage. They stay on your device and are never shared with us.
+                        </p>
+                    </div>
                 </div>
             </section>
 
@@ -318,7 +341,7 @@ const HomePage = () => {
                     </h2>
                     <p className="text-lg text-aida-text-muted leading-relaxed">
                         AIDA is built by developers who believe AI tools should be open, honest, and
-                        accessible, not locked behind corporate paywalls. The full source code for
+                        accessible — not locked behind corporate paywalls. The full source code for
                         the frontend and backend is available on GitHub. We're excited to have you
                         here, and we'd love for you to be part of what we're building.
                     </p>
