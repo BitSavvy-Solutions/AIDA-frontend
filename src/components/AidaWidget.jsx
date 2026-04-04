@@ -1,45 +1,42 @@
-/* src/components/AidaWidget.jsx */
+// src/components/AidaWidget.jsx
+
 import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-// Define a constant for the global widget container ID
 const WIDGET_CONTAINER_ID = 'aida-global-widget-container';
 
-/**
- * A controller component that manages the lifecycle of the global AIDA widget.
- * It does not render any DOM itself but imperatively calls the widget's render function.
- */
 const AidaWidget = () => {
-    const { user, isAuthenticated, authLoading } = useAuth();
+    // CHANGED: Added apiToken to the destructured context values
+    const { user, isAuthenticated, authLoading, apiToken } = useAuth();
 
     useEffect(() => {
-        // This effect runs once per component instance. The `key` prop in App.jsx
-        // ensures a fresh instance on authentication state changes.
         if (authLoading || typeof window.AidaWidget === 'undefined') {
-            // Wait for auth to be resolved and the widget script to be loaded.
             return;
         }
 
         let widgetUser = { email: 'demo@example.com', name: 'Guest' };
 
         if (isAuthenticated && user) {
-            console.log(`[AIDA] Rendering universal widget for AUTHENTICATED user: ${user.id}`);
+            console.log(`[AIDA] Rendering widget for authenticated user: ${user.id}`);
             widgetUser = {
                 id: user.id,
                 email: user.email,
                 name: user.name,
+                // CHANGED: Pass the API token so the widget can include it in
+                // its Authorization header when calling /iverse_agent.
+                // The widget's own backend calls will need to be updated
+                // separately to use this token in the header.
+                apiToken: apiToken || null,
             };
         } else {
-            console.log('[AIDA] Rendering universal widget for ANONYMOUS user.');
+            console.log('[AIDA] Rendering widget for anonymous user.');
         }
 
         const container = document.getElementById(WIDGET_CONTAINER_ID);
 
         if (container) {
-            // A small delay helps ensure all scripts are settled before rendering.
             const timer = setTimeout(() => {
                 try {
-                    // Render the widget into the predefined global container.
                     window.AidaWidget.render(`#${WIDGET_CONTAINER_ID}`, {
                         language: 'en',
                         user: widgetUser,
@@ -59,25 +56,25 @@ const AidaWidget = () => {
                             paymentLink: {
                                 show: true,
                                 url: 'https://buy.stripe.com/5kQ8wO11A3y97tjcThabK00',
-                                text: '' // Custom text for dev environment
+                                text: ''
                             }
                         }
                     });
-                    console.log('[AIDA] Universal widget successfully rendered.');
+                    console.log('[AIDA] Widget rendered successfully.');
                 } catch (e) {
-                    console.error('[AIDA] Failed to render universal widget:', e);
+                    console.error('[AIDA] Failed to render widget:', e);
                 }
-            }, 50); // Small delay for safety
+            }, 50);
 
-            // Cleanup the timer on component unmount
             return () => clearTimeout(timer);
         } else {
-            console.warn(`[AIDA] Global widget container #${WIDGET_CONTAINER_ID} not found.`);
+            console.warn(`[AIDA] Container #${WIDGET_CONTAINER_ID} not found.`);
         }
 
-    }, [isAuthenticated, user, authLoading]); // Effect dependencies
+    // CHANGED: Added apiToken to dependency array so the widget
+    // re-renders with the new token immediately after login
+    }, [isAuthenticated, user, authLoading, apiToken]);
 
-    // This component is a "controller" and renders nothing itself.
     return null;
 };
 

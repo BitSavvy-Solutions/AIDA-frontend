@@ -1,39 +1,28 @@
-/**
- * src/config/apiConfig.js
- * Configures the backend API connection.
- */
+// src/config/apiConfig.js
 
-// Detect if the app is running in a development environment (localhost)
 const isDevelopment = import.meta.env.MODE === 'development';
 
 const config = {
-    // AUTOMATIC SWITCHING:
-    // If Local: Uses localhost:7071 (Standard Azure Function local port)
-    // If Prod: Uses your live Azure URL
     AZURE_FUNCTIONS_URL: isDevelopment
-        ? 'http://localhost:7071/api' 
+        ? 'http://localhost:7071/api'
         : 'https://aitutfunc.azurewebsites.net/api',
 
-    // Frontend URL for redirects (Stripe success/cancel)
     FRONTEND_URL: isDevelopment
         ? 'http://localhost:5173'
         : window.location.origin,
-    
-    // The master key for your Azure Functions host.
-    // It is recommended to use a single host key for simplicity.
+
     FUNCTION_HOST_KEY: 'dlkgVHOPghXdpOeE9SgyYe0r6nN3AjuEowskmJsDDhrBAzFuSlPb7g==',
-    
-    // Default request timeout in milliseconds
+
     TIMEOUT: 15000,
-    
-    // API Endpoints
+
     ENDPOINTS: {
-        // User management API
         USERS: '/users',
-        USER_BY_ID: '/users', // Endpoint will be `/users/{id}`
+        USER_BY_ID: '/users',
+        // NEW: Auth endpoints added for clarity and future use
+        AUTH_GOOGLE: '/auth/google',
+        AUTH_LOGOUT: '/auth/logout',
     },
-    
-    // Default headers for all requests
+
     DEFAULT_HEADERS: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -41,33 +30,21 @@ const config = {
     },
 };
 
-/**
- * Builds a complete URL for a given API endpoint.
- * @param {string} endpoint - The endpoint path (e.g., '/users').
- * @param {string|null} id - An optional ID to append to the path.
- * @param {object} queryParams - Optional query parameters.
- * @returns {string} The full URL.
- */
 export const buildUrl = (endpoint, id = null, queryParams = {}) => {
     let url = config.AZURE_FUNCTIONS_URL + endpoint;
-    
+
     if (id) {
         url += `/${id}`;
     }
-    
+
     const params = new URLSearchParams(queryParams);
     if (params.toString()) {
         url += `?${params.toString()}`;
     }
-    
+
     return url;
 };
 
-/**
- * Prepares the options for a fetch request, including headers and a timeout signal.
- * @param {object} additionalHeaders - Any extra headers for the request.
- * @returns {object} Options object for the fetch API.
- */
 export const getRequestOptions = (additionalHeaders = {}) => {
     const headers = {
         ...config.DEFAULT_HEADERS,
@@ -79,10 +56,22 @@ export const getRequestOptions = (additionalHeaders = {}) => {
     } else {
         console.error('❌ CRITICAL: No function host key found in apiConfig.js');
     }
-    
+
+    // CHANGED: Automatically attach the API token to every outgoing request
+    // if a valid, non-expired one exists in localStorage.
+    // This means creditService.getBalance and createCheckoutSession are
+    // automatically authenticated without any changes to those files.
+    const storedToken = localStorage.getItem('aidaToken');
+    const storedExpiry = localStorage.getItem('aidaTokenExpiry');
+    const tokenIsValid = storedToken && storedExpiry && new Date() < new Date(storedExpiry);
+
+    if (tokenIsValid) {
+        headers['Authorization'] = `Bearer ${storedToken}`;
+    }
+
     const controller = new AbortController();
     setTimeout(() => controller.abort(), config.TIMEOUT);
-    
+
     return {
         headers,
         signal: controller.signal,

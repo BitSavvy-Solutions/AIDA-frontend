@@ -1,19 +1,21 @@
-/* src/pages/LoginPage.jsx */
+// src/pages/LoginPage.jsx
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGoogleLogin } from '@react-oauth/google';
+import { GoogleLogin } from '@react-oauth/google';
+// CHANGED: useGoogleLogin -> GoogleLogin
+// useGoogleLogin only returns an access_token. Our backend needs a Google ID token
+// to cryptographically verify the user. GoogleLogin component's onSuccess callback
+// provides credentialResponse.credential which IS the Google ID token.
 import { useAuth } from '../contexts/AuthContext';
 import { FiLogIn, FiAlertCircle } from 'react-icons/fi';
-import { FcGoogle } from 'react-icons/fc';
+// REMOVED: FcGoogle import. No longer needed since we use the GoogleLogin component.
 
 const LoginPage = () => {
     const [error, setError] = useState('');
     const { processLogin, isAuthenticated, authLoading } = useAuth();
     const navigate = useNavigate();
 
-    // This effect is now ONLY to redirect an already-logged-in user
-    // who happens to land on the /login page. It no longer interferes
-    // with the post-login navigation flow.
     useEffect(() => {
         if (!authLoading && isAuthenticated) {
             console.log('User is already authenticated. Redirecting from login page.');
@@ -21,37 +23,26 @@ const LoginPage = () => {
         }
     }, [isAuthenticated, authLoading, navigate]);
 
-    const handleGoogleLogin = useGoogleLogin({
-        onSuccess: async (tokenResponse) => {
-            setError('');
-            try {
-                const res = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
-                    headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                });
-                const userInfo = await res.json();
-                
-                // This function now exclusively controls the post-login redirect.
-                await processLogin({
-                    id: userInfo.id,
-                    email: userInfo.email,
-                    name: userInfo.name,
-                    picture: userInfo.picture,
-                    provider: 'google'
-                });
+    // CHANGED: handleGoogleLogin -> handleCredentialResponse
+    // credentialResponse.credential is the Google ID token string.
+    // We pass it directly to processLogin which sends it to our backend for verification.
+    const handleCredentialResponse = async (credentialResponse) => {
+        setError('');
 
-                navigate('/', { replace: true }); // Redirect to home page after login
-            } catch (err) {
-                console.error("Google login process failed:", err);
-                setError('Failed to process login. Please try again.');
-            }
-        },
-        onError: () => {
-            setError('Google authentication failed. Please try again.');
-        },
-    });
+        if (!credentialResponse?.credential) {
+            setError('Could not retrieve Google credentials. Please try again.');
+            return;
+        }
 
-    // If the user is already logged in, we can show a loading/redirecting state
-    // instead of the login form while the effect redirects them.
+        try {
+            await processLogin(credentialResponse.credential);
+            navigate('/', { replace: true });
+        } catch (err) {
+            console.error("Google login process failed:", err);
+            setError(err.message || 'Failed to process login. Please try again.');
+        }
+    };
+
     if (authLoading || isAuthenticated) {
         return (
             <div className="flex items-center justify-center py-12 px-4">
@@ -59,7 +50,7 @@ const LoginPage = () => {
             </div>
         );
     }
-    
+
     return (
         <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div className="w-full max-w-md p-8 space-y-8 bg-aida-card rounded-xl shadow-lg border border-aida-border">
@@ -68,22 +59,29 @@ const LoginPage = () => {
                     <h2 className="mt-6 text-3xl font-bold text-aida-dark">Sign in to AIDA</h2>
                     <p className="mt-2 text-sm text-aida-text-muted">to save conversations and track usage</p>
                 </div>
-                
+
                 {error && (
                     <div className="bg-red-200/20 border border-red-400 text-red-300 px-4 py-3 rounded-lg relative flex items-center">
-                        <FiAlertCircle className="mr-2"/>
+                        <FiAlertCircle className="mr-2" />
                         <span className="block sm:inline">{error}</span>
                     </div>
                 )}
-                
-                <button
-                    onClick={() => handleGoogleLogin()}
-                    disabled={authLoading} // Although we render "Redirecting", this is still good practice
-                    className="w-full flex items-center justify-center px-4 py-3 border border-aida-border rounded-md shadow-sm text-base font-medium text-aida-dark bg-aida-light hover:bg-opacity-80 disabled:opacity-50 transition-colors"
-                >
-                    <FcGoogle className="w-6 h-6 mr-3" />
-                    Sign in with Google
-                </button>
+
+                {/* CHANGED: Replaced custom FcGoogle button with GoogleLogin component.
+                    The GoogleLogin component is the only way to get a Google ID token
+                    on the frontend without a backend OAuth code exchange. */}
+                <div className="flex justify-center">
+                    <GoogleLogin
+                        onSuccess={handleCredentialResponse}
+                        onError={() => setError('Google authentication failed. Please try again.')}
+                        useOneTap={false}
+                        theme="outline"
+                        size="large"
+                        text="signin_with"
+                        shape="rectangular"
+                        width="368"
+                    />
+                </div>
             </div>
         </div>
     );
