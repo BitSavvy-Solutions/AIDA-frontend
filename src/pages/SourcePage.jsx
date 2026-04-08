@@ -3,11 +3,9 @@ import React from 'react';
 import { FiGithub, FiExternalLink, FiGitPullRequest, FiPackage } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 
-// ── Data ──────────────────────────────────────────────────────────────────────
-
 const REPOS = [
     {
-        name: 'AIDA Widget — Frontend',
+        name: 'AIDA Widget: Frontend',
         description:
             'The chat widget, portal homepage, and all user-facing components. ' +
             'Built with React, Vite, and Tailwind CSS. Embeds into any website with a single script tag.',
@@ -42,8 +40,6 @@ const LOCAL_STEPS = [
         command: 'npm run dev',
     },
 ];
-
-// ── Sub-components ────────────────────────────────────────────────────────────
 
 const RepoCard = ({ name, description, url, tags }) => (
     <a
@@ -87,12 +83,9 @@ const CommandStep = ({ number, label, command }) => (
     </div>
 );
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 const SourcePage = () => (
     <div className="bg-aida-light min-h-screen">
 
-        {/* ── Page header ─────────────────────────────────────────────────── */}
         <div className="bg-aida-card border-b border-aida-border">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-aida-pink/10 border border-aida-pink/20 text-aida-pink text-sm font-medium mb-6">
@@ -109,12 +102,11 @@ const SourcePage = () => (
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 space-y-20">
 
-            {/* ── Repositories ────────────────────────────────────────────── */}
             <section>
                 <h2 className="text-2xl font-bold text-aida-dark mb-2">Repositories</h2>
                 <p className="text-aida-text-muted mb-8">
-                    AIDA is split into two independent repositories — one for the frontend
-                    interface, one for the AI backend.
+                    AIDA lives in two independent repositories. One handles the frontend
+                    interface and the other handles the AI backend.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {REPOS.map((repo) => (
@@ -123,7 +115,6 @@ const SourcePage = () => (
                 </div>
             </section>
 
-            {/* ── Run Locally ─────────────────────────────────────────────── */}
             <section>
                 <h2 className="text-2xl font-bold text-aida-dark mb-2">
                     Run the Frontend Locally
@@ -154,14 +145,13 @@ const SourcePage = () => (
                 </div>
             </section>
 
-            {/* ── Contribute ──────────────────────────────────────────────── */}
             <section className="p-8 rounded-2xl border border-aida-border bg-aida-card text-center">
                 <FiGitPullRequest className="w-10 h-10 text-aida-pink mx-auto mb-4" />
                 <h2 className="text-2xl font-bold text-aida-dark mb-3">How to Contribute</h2>
                 <p className="text-aida-text-muted max-w-xl mx-auto mb-8 leading-relaxed">
                     Found a bug? Have a feature idea? We'd love your help. Open an issue to start
                     a discussion, or submit a pull request directly. All contributions are
-                    welcome — code, documentation, design, and feedback.
+                    welcome: code, documentation, design, and feedback.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                     <a
@@ -171,7 +161,7 @@ const SourcePage = () => (
                         className="inline-flex items-center px-6 py-3 bg-aida-pink text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
                     >
                         <FiGithub className="w-4 h-4 mr-2" />
-                        Open an Issue — Frontend
+                        Open a Frontend Issue
                     </a>
                     <a
                         href="https://github.com/BitSavvy-Solutions/aida-agentbackend/issues"
@@ -180,7 +170,7 @@ const SourcePage = () => (
                         className="inline-flex items-center px-6 py-3 border border-aida-border text-aida-dark font-semibold rounded-xl hover:bg-aida-light transition-colors"
                     >
                         <FiGithub className="w-4 h-4 mr-2" />
-                        Open an Issue — Backend
+                        Open a Backend Issue
                     </a>
                 </div>
             </section>

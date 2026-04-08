@@ -1,3 +1,4 @@
+// src/components/Header.jsx
 import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,10 +10,9 @@ import BuyCreditsModal from './BuyCreditsModal';
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams(); // To check URL for ?payment=success
+    const [searchParams] = useSearchParams();
 
     const [balance, setBalance] = useState(() => {
-        // Check if we have a stored "pre-payment" balance first
         const stored = localStorage.getItem('aida_pre_payment_balance');
         
         console.log("--------------------------------");
@@ -24,21 +24,15 @@ const Header = () => {
     });
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPolling, setIsPolling] = useState(false);
-
     const [notification, setNotification] = useState(null);
-
-    // Ref to track if we are currently polling to prevent duplicate intervals
     const pollingRef = useRef(false);
 
-    // 1. Fetch Balance on Load
     useEffect(() => {
-        // Only fetch normally if we are NOT in the middle of a payment success flow
         if (isAuthenticated && user?.id && searchParams.get('payment') !== 'success') {
             fetchBalance();
         }
     }, [isAuthenticated, user, searchParams]);
 
-    // 2. Handle Payment Success with Artificial Delay (Smart Polling)
     useEffect(() => {
         const paymentStatus = searchParams.get('payment');
 
@@ -54,43 +48,33 @@ const Header = () => {
 
             const runArtificialDelay = async () => {
                 try {
-                    // A. Get the "Old" Balance from Memory
                     const rawStored = localStorage.getItem('aida_pre_payment_balance');
                     const oldBalance = rawStored ? parseFloat(rawStored) : 0;
 
-                    // B. Force UI to show Old Balance immediately (The "Lie")
                     setBalance(oldBalance);
 
-                    // C. Fetch the Real New Balance in the background
                     const newBalance = await creditService.getBalance(user.id);
 
-                    // D. Wait for 5 seconds (Artificial Delay for UX)
-                    // This gives the user time to see the spinner and "feel" the processing
                     setTimeout(() => {
-                        // E. The Reveal
-                        setBalance(newBalance); // Update number
-                        setIsPolling(false);    // Stop spinner
+                        setBalance(newBalance);
+                        setIsPolling(false);
 
-                        // --- 2. SHOW SUCCESS ALERT ---
                         setNotification({
                             type: 'success',
                             title: 'Payment Successful!',
                             message: `Your new balance is $${newBalance.toFixed(2)}`
                         });
                         
-                        // Cleanup
                         localStorage.removeItem('aida_pre_payment_balance');
-                        navigate('/', { replace: true }); // Clear URL
+                        navigate('/', { replace: true });
 
-                        // --- 3. AUTO HIDE ALERT AFTER 4 SECONDS ---
                         setTimeout(() => setNotification(null), 4000);
 
-                    }, 5000); // 5s delay
+                    }, 5000);
 
                 } catch (e) {
                     console.error("Error during payment sync", e);
                     setIsPolling(false);
-                    // Optional: Show error alert
                     setNotification({ type: 'error', title: 'Error', message: 'Could not sync balance.' });
                 }
             };
@@ -119,7 +103,7 @@ const Header = () => {
         if (amount > 0) return 'text-green-600 dark:text-green-400';
         if (amount < 0) return 'text-red-600 dark:text-red-400';
         return 'text-gray-700 dark:text-gray-200';
-    }
+    };
 
     return (
         <>
@@ -134,18 +118,13 @@ const Header = () => {
                         <div className="flex items-center space-x-4">
                             {isAuthenticated && user ? (
                                 <div className="flex items-center space-x-3">
-
-                                    {/* --- NEW: Balance Display --- */}
                                     <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full px-3 py-1 border border-gray-200 dark:border-gray-700">
-                                        {/* Spinner shows NEXT to balance */}
                                         {isPolling && (
                                             <FiLoader className="animate-spin text-pink-500 mr-2" title="Updating balance..." />
                                         )}
-
                                         <span className={`text-sm font-bold mr-2 ${getBalanceColor(balance)}`}>
                                             ${typeof balance === 'number' ? balance.toFixed(2) : '0.00'}
                                         </span>
-
                                         <button 
                                             onClick={() => setIsModalOpen(true)}
                                             className="bg-aida-pink hover:bg-pink-600 text-white rounded-full p-1 transition-colors"
@@ -154,7 +133,6 @@ const Header = () => {
                                             <FiPlus size={14} />
                                         </button>
                                     </div>
-                                    {/* ---------------------------- */}
 
                                     <span className="text-sm font-medium text-aida-dark hidden sm:block">
                                         {user.name}
@@ -173,7 +151,7 @@ const Header = () => {
                                     className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-aida-pink rounded-lg hover:opacity-90 transition-opacity"
                                 >
                                     <FiLogIn className="mr-2 h-4 w-4"/>
-                                    Login
+                                    Join Beta
                                 </Link>
                             )}
                         </div>
@@ -181,7 +159,6 @@ const Header = () => {
                 </div>
             </header>
 
-            {/* Render the Modal */}
             <BuyCreditsModal 
                 userId={user?.id} 
                 isOpen={isModalOpen} 
@@ -189,7 +166,6 @@ const Header = () => {
                 currentBalance={balance}
             />
 
-            {/* --- SNACKBAR ALERT --- */}
             {notification && (
                 <div className="fixed bottom-6 left-6 z-[3000] animate-slide-up">
                     <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${
@@ -197,7 +173,6 @@ const Header = () => {
                             ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' 
                             : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
                     }`}>
-                        {/* Icon Logic */}
                         <div className={`p-2 rounded-full ${
                             notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
                         }`}>
@@ -208,7 +183,6 @@ const Header = () => {
                             )}
                         </div>
 
-                        {/* Text Content */}
                         <div>
                             <h4 className={`text-sm font-bold ${
                                 notification.type === 'processing' ? 'text-gray-900 dark:text-white' : 'text-green-800 dark:text-green-200'
@@ -220,7 +194,6 @@ const Header = () => {
                             </p>
                         </div>
 
-                        {/* Close Button (Optional) */}
                         <button 
                             onClick={() => setNotification(null)}
                             className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"

@@ -58,7 +58,6 @@ const PricingGraphic = () => (
 
 const VoiceGraphic = () => (
     <div className="flex items-center justify-center gap-5 py-2">
-        {/* Pulsing mic */}
         <div className="relative flex items-center justify-center w-16 h-16 flex-shrink-0">
             <div
                 className="absolute inset-0 rounded-full border border-aida-pink/20 animate-ping"
@@ -72,7 +71,6 @@ const VoiceGraphic = () => (
                 <FiMic className="w-5 h-5 text-aida-pink" />
             </div>
         </div>
-        {/* Staggered equalizer bars */}
         <div className="flex items-center gap-[3px]">
             {[6, 11, 18, 13, 8, 15, 10, 6, 14, 9].map((h, i) => (
                 <div
@@ -120,7 +118,6 @@ const WebSearchGraphic = () => (
                 <span className="text-[10px] font-mono text-blue-300">live</span>
             </div>
         </div>
-        {/* Simulated result rows */}
         <div className="flex flex-col gap-2.5">
             {[100, 80, 62].map((w, i) => (
                 <div key={i} className="flex items-center gap-2">
@@ -137,7 +134,6 @@ const WebSearchGraphic = () => (
 
 const YouTubeGraphic = () => (
     <div className="flex items-center justify-center gap-4 py-2">
-        {/* YouTube play card */}
         <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
             <div className="w-20 h-12 rounded-lg bg-red-500/20 border border-red-400/30 flex items-center justify-center">
                 <div
@@ -154,7 +150,6 @@ const YouTubeGraphic = () => (
 
         <span className="text-red-400/50 font-bold text-lg">+</span>
 
-        {/* Webpage card */}
         <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
             <div className="w-20 h-12 rounded-lg bg-red-500/10 border border-red-400/20 flex items-center justify-center">
                 <FiGlobe className="w-5 h-5 text-red-300/60" />
@@ -162,7 +157,6 @@ const YouTubeGraphic = () => (
             <span className="text-[10px] text-red-300/70 font-medium">Any webpage</span>
         </div>
 
-        {/* Action list */}
         <div className="flex flex-col gap-1.5 ml-1">
             {['Summarize', 'Query', 'Analyze'].map((action) => (
                 <div key={action} className="flex items-center gap-1.5">
@@ -259,7 +253,6 @@ const FeatureCarousel = () => {
     const transitioning = useRef(false);
     const total         = SLIDES.length;
 
-    /** Fade-transition to a specific slide index. */
     const goTo = useCallback((next) => {
         if (next === indexRef.current || transitioning.current) return;
         transitioning.current = true;
@@ -272,7 +265,6 @@ const FeatureCarousel = () => {
         }, 260);
     }, []);
 
-    /** Auto-play — uses ref so interval never needs to be recreated. */
     useEffect(() => {
         if (hovered) return;
         const id = setInterval(() => {
@@ -289,10 +281,7 @@ const FeatureCarousel = () => {
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
         >
-            {/* ── Nav + Card row ─────────────────────────────────────── */}
             <div className="flex items-center gap-3">
-
-                {/* Prev */}
                 <button
                     onClick={() => goTo((indexRef.current - 1 + total) % total)}
                     aria-label="Previous feature"
@@ -301,7 +290,6 @@ const FeatureCarousel = () => {
                     <FiChevronLeft className="w-4 h-4" />
                 </button>
 
-                {/* Card */}
                 <div
                     className={`flex-1 relative overflow-hidden rounded-2xl border ${slide.border} bg-aida-card`}
                     style={{
@@ -310,7 +298,6 @@ const FeatureCarousel = () => {
                         transition: 'opacity 0.26s ease, transform 0.26s ease',
                     }}
                 >
-                    {/* Colour-accent gradient backdrop */}
                     <div
                         className={`absolute inset-0 bg-gradient-to-br ${slide.gradient} pointer-events-none`}
                     />
@@ -329,7 +316,6 @@ const FeatureCarousel = () => {
                     </div>
                 </div>
 
-                {/* Next */}
                 <button
                     onClick={() => goTo((indexRef.current + 1) % total)}
                     aria-label="Next feature"
@@ -339,7 +325,6 @@ const FeatureCarousel = () => {
                 </button>
             </div>
 
-            {/* ── Dot indicators ─────────────────────────────────────── */}
             <div className="flex items-center justify-center gap-1.5 mt-4">
                 {SLIDES.map((s, i) => (
                     <button
@@ -393,8 +378,6 @@ const HomePage = () => {
         if (launcherBtn) launcherBtn.click();
     }, []);
 
-    // ── Static data ───────────────────────────────────────────────────────────
-
     const pillars = [
         {
             icon: FiDollarSign,
@@ -446,36 +429,31 @@ const HomePage = () => {
             number: '03',
             title: 'Start Talking',
             description:
-                'Ask anything. Switch models anytime. Your conversation is saved privately in your browser — no account required.',
+                'Ask anything. Switch models anytime. Your conversation is saved privately in your browser with no account required.',
         },
     ];
 
     const guestFeatures = [
-        'DeepSeek — fast, capable, and free to try',
-        "Gemini Flash — Google's speedy lightweight model",
+        'DeepSeek: fast, capable, and free to try',
+        "Gemini Flash: Google's speedy lightweight model",
         'No registration, no forms, no waiting',
         'Chat history saved privately in your browser',
     ];
 
     const authFeatures = [
         'Everything in the free tier',
-        "Claude — Anthropic's powerful reasoning model",
-        "Gemini Pro — Google's full-power model",
+        "Claude: Anthropic's powerful reasoning model",
+        "Gemini Pro: Google's full-power model",
         'Image generation',
         'Chat history saved privately in your browser',
     ];
 
-    // ── Render ────────────────────────────────────────────────────────────────
-
     return (
         <div className="bg-aida-light">
 
-            {/* ──────────────────────────────────────────────────────────────
-                HERO
-            ────────────────────────────────────────────────────────────── */}
+            {/* HERO */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 text-center">
 
-                {/* Acronym badge */}
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-aida-pink/10 border border-aida-pink/20 text-aida-pink text-sm font-medium mb-8">
                     <HiSparkles className="w-4 h-4" />
                     <span>
@@ -486,26 +464,23 @@ const HomePage = () => {
                     </span>
                 </div>
 
-                {/* Headline */}
                 <h1 className="text-5xl md:text-6xl font-bold text-aida-dark leading-tight tracking-tight">
                     Multiple AI Models.{' '}
                     <span className="text-aida-pink">Open Source Interface.</span>{' '}
                     No Daily Limits.
                 </h1>
 
-                {/* ── Feature carousel (replaces static sub-headline) ── */}
                 <div className="mt-8">
                     <FeatureCarousel />
                 </div>
 
-                {/* CTAs */}
                 <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
                     <button
                         onClick={handleStartChatting}
                         className="inline-flex items-center px-8 py-4 bg-aida-pink text-white font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform text-lg"
                     >
                         <FiMessageSquare className="w-5 h-5 mr-2" />
-                        Start Chatting — It's Free
+                        Start Chatting, It's Free
                     </button>
 
                     <button
@@ -517,12 +492,11 @@ const HomePage = () => {
                     </button>
                 </div>
 
-                {/* Reassurance */}
                 <p className="mt-5 text-sm text-aida-text-muted">
                     No account needed to get started.{' '}
                     {isAuthenticated ? (
                         <span className="text-green-400 font-medium">
-                            You're logged in — advanced models and image generation are available.
+                            You're in the beta. Advanced models and image generation are available.
                         </span>
                     ) : (
                         <>
@@ -530,14 +504,13 @@ const HomePage = () => {
                                 onClick={() => navigate('/login')}
                                 className="text-aida-pink hover:underline font-medium"
                             >
-                                Log in
+                                Join the beta
                             </button>
                             {' '}to unlock Claude, Gemini Pro, and image generation.
                         </>
                     )}
                 </p>
 
-                {/* Widget pointer hint */}
                 <p className="mt-2 text-xs text-aida-text-muted">
                     The chat button will appear in the{' '}
                     <span className="font-medium text-aida-dark">bottom-right corner</span>{' '}
@@ -545,9 +518,7 @@ const HomePage = () => {
                 </p>
             </section>
 
-            {/* ──────────────────────────────────────────────────────────────
-                THREE VALUE PILLARS
-            ────────────────────────────────────────────────────────────── */}
+            {/* THREE VALUE PILLARS */}
             <section className="bg-aida-card border-t border-b border-aida-border">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
                     <div className="text-center mb-14">
@@ -562,9 +533,7 @@ const HomePage = () => {
                 </div>
             </section>
 
-            {/* ──────────────────────────────────────────────────────────────
-                HOW IT WORKS
-            ────────────────────────────────────────────────────────────── */}
+            {/* HOW IT WORKS */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
                 <div className="text-center mb-14">
                     <h2 className="text-3xl font-bold text-aida-dark">How It Works</h2>
@@ -586,15 +555,13 @@ const HomePage = () => {
                 </div>
             </section>
 
-            {/* ──────────────────────────────────────────────────────────────
-                GUEST vs LOGGED-IN
-            ────────────────────────────────────────────────────────────── */}
+            {/* GUEST vs LOGGED-IN */}
             <section className="bg-aida-card border-t border-aida-border">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
                     <div className="text-center mb-14">
                         <h2 className="text-3xl font-bold text-aida-dark">Choose How You Start</h2>
                         <p className="mt-3 text-aida-text-muted">
-                            Jump straight in, or unlock smarter models with a free account.
+                            Jump straight in, or join the beta to unlock smarter models.
                         </p>
                     </div>
 
@@ -623,15 +590,15 @@ const HomePage = () => {
                             </button>
                         </div>
 
-                        {/* Logged-in card */}
+                        {/* Beta card */}
                         <div className="p-8 rounded-2xl border border-aida-pink/30 bg-aida-pink/5 flex flex-col relative overflow-hidden">
                             <span className="absolute top-4 right-4 px-2 py-0.5 bg-aida-pink text-white text-xs font-bold rounded-full">
                                 Recommended
                             </span>
                             <div className="text-3xl mb-4">⚡</div>
-                            <h3 className="text-xl font-bold text-aida-dark mb-1">With a Free Account</h3>
+                            <h3 className="text-xl font-bold text-aida-dark mb-1">With a Beta Account</h3>
                             <p className="text-sm text-aida-text-muted mb-5">
-                                Unlock smarter models and image generation — still free.
+                                Unlock smarter models and image generation, still free.
                             </p>
                             <ul className="space-y-3 text-aida-text-muted flex-grow">
                                 {authFeatures.map((item) => (
@@ -654,7 +621,7 @@ const HomePage = () => {
                                     className="mt-8 w-full py-3 bg-aida-pink text-white rounded-xl font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                                 >
                                     <FiLogIn className="w-4 h-4" />
-                                    Sign in with Google
+                                    Join the Beta
                                 </button>
                             )}
                         </div>
@@ -672,9 +639,7 @@ const HomePage = () => {
                 </div>
             </section>
 
-            {/* ──────────────────────────────────────────────────────────────
-                OPEN SOURCE & COMMUNITY
-            ────────────────────────────────────────────────────────────── */}
+            {/* OPEN SOURCE & COMMUNITY */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
                 <div className="max-w-3xl mx-auto">
                     <h2 className="text-3xl font-bold text-aida-dark mb-6">
@@ -682,7 +647,7 @@ const HomePage = () => {
                     </h2>
                     <p className="text-lg text-aida-text-muted leading-relaxed">
                         AIDA is built by developers who believe AI tools should be open, honest, and
-                        accessible — not locked behind corporate paywalls. The full source code for
+                        accessible. Not locked behind corporate paywalls. The full source code for
                         the frontend and backend is available on GitHub. We're excited to have you
                         here, and we'd love for you to be part of what we're building.
                     </p>
@@ -709,9 +674,7 @@ const HomePage = () => {
                 </div>
             </section>
 
-            {/* ──────────────────────────────────────────────────────────────
-                FINAL CTA STRIP
-            ────────────────────────────────────────────────────────────── */}
+            {/* FINAL CTA STRIP */}
             <section className="bg-aida-card border-t border-aida-border">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
                     <h2 className="text-3xl font-bold text-aida-dark">Ready? It takes 5 seconds.</h2>

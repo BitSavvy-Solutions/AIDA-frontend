@@ -3,13 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-// CHANGED: useGoogleLogin -> GoogleLogin
-// useGoogleLogin only returns an access_token. Our backend needs a Google ID token
-// to cryptographically verify the user. GoogleLogin component's onSuccess callback
-// provides credentialResponse.credential which IS the Google ID token.
 import { useAuth } from '../contexts/AuthContext';
 import { FiLogIn, FiAlertCircle } from 'react-icons/fi';
-// REMOVED: FcGoogle import. No longer needed since we use the GoogleLogin component.
 
 const LoginPage = () => {
     const [error, setError] = useState('');
@@ -23,9 +18,6 @@ const LoginPage = () => {
         }
     }, [isAuthenticated, authLoading, navigate]);
 
-    // CHANGED: handleGoogleLogin -> handleCredentialResponse
-    // credentialResponse.credential is the Google ID token string.
-    // We pass it directly to processLogin which sends it to our backend for verification.
     const handleCredentialResponse = async (credentialResponse) => {
         setError('');
 
@@ -56,8 +48,10 @@ const LoginPage = () => {
             <div className="w-full max-w-md p-8 space-y-8 bg-aida-card rounded-xl shadow-lg border border-aida-border">
                 <div className="text-center">
                     <FiLogIn className="mx-auto h-12 w-12 text-aida-pink" />
-                    <h2 className="mt-6 text-3xl font-bold text-aida-dark">Sign in to AIDA</h2>
-                    <p className="mt-2 text-sm text-aida-text-muted">to save conversations and track usage</p>
+                    <h2 className="mt-6 text-3xl font-bold text-aida-dark">Join the AIDA Beta</h2>
+                    <p className="mt-2 text-sm text-aida-text-muted">
+                        Get early access to advanced models and features
+                    </p>
                 </div>
 
                 {error && (
@@ -67,9 +61,6 @@ const LoginPage = () => {
                     </div>
                 )}
 
-                {/* CHANGED: Replaced custom FcGoogle button with GoogleLogin component.
-                    The GoogleLogin component is the only way to get a Google ID token
-                    on the frontend without a backend OAuth code exchange. */}
                 <div className="flex justify-center">
                     <GoogleLogin
                         onSuccess={handleCredentialResponse}
