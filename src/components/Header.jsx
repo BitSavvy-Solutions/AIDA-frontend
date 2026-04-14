@@ -267,7 +267,7 @@ const Header = () => {
                                         </Disclosure.Button>
                                         <Disclosure.Button
                                             as={Link}
-                                            to="/dashboard"
+                                            to="/account"
                                             className="flex items-center px-3 py-2 text-base font-medium text-gray-700 rounded-md hover:text-aida-pink hover:bg-gray-50"
                                         >
                                             <FiUser className="mr-3" /> Account
