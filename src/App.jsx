@@ -12,6 +12,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import SourcePage from './pages/SourcePage';       // ← new
 import AidaWidget from './components/AidaWidget';
+import Account from './pages/Account';
 
 /**
  * AppContent uses hooks from providers that wrap it, and owns the
@@ -30,6 +31,7 @@ const AppContent = () => {
                         <Route path="/"       element={<HomePage />} />
                         <Route path="/login"  element={<LoginPage />} />
                         <Route path="/source" element={<SourcePage />} />  {/* ← new */}
+                        <Route path="/account" element={<Account />} />  {/* ← new */}
                         <Route path="*"       element={<Navigate to="/" replace />} />
                     </Routes>
                 </main>
