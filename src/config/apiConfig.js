@@ -7,6 +7,10 @@ const config = {
         ? 'http://localhost:7071/api'
         : 'https://aitutfunc.azurewebsites.net/api',
 
+    FASTAPI_URL: isDevelopment
+        ? 'http://localhost:8080/api'
+        : 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/',    
+
     FRONTEND_URL: isDevelopment
         ? 'http://localhost:5173'
         : window.location.origin,
