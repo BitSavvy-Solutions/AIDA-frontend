@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 import Header from './components/Header';
 import Footer from './components/Footer';
+import PWAInstallBanner from './components/PWAInstallBanner';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import SourcePage from './pages/SourcePage';       // ← new
@@ -25,6 +26,7 @@ const AppContent = () => {
         <Router>
             <div className="min-h-screen flex flex-col bg-aida-light">
                 <Header />
+                <PWAInstallBanner />
 
                 <main className="flex-grow">
                     <Routes>
