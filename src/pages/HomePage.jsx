@@ -1,4 +1,5 @@
 // src/pages/HomePage.jsx
+import userService from '../services/userService';
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -373,6 +374,16 @@ const HomePage = () => {
     const navigate        = useNavigate();
     const { isAuthenticated } = useAuth();
 
+    // ADDED: State for user count
+    const [userCount, setUserCount] = useState(null);
+
+    // ADDED: Fetch count on mount
+    useEffect(() => {
+        userService.getUserCount()
+            .then(count => setUserCount(count))
+            .catch(err => console.error("Failed to fetch user count:", err));
+    }, []);
+
     const handleStartChatting = useCallback(() => {
         const launcherBtn = document.querySelector('.aida-widget-launcher button');
         if (launcherBtn) launcherBtn.click();
@@ -469,6 +480,19 @@ const HomePage = () => {
                     <span className="text-aida-pink">Open Source Interface.</span>{' '}
                     No Daily Limits.
                 </h1>
+
+                {/* 🔥 ADDED: Display user count right under the main heading */}
+                {userCount !== null && userCount > 0 && (
+                    <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-aida-card border border-aida-border shadow-sm">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                        <span className="text-sm font-medium text-aida-text-muted">
+                            Join <span className="text-aida-dark font-bold">{userCount.toLocaleString()}</span> registered users
+                        </span>
+                    </div>
+                )}
 
                 <div className="mt-8">
                     <FeatureCarousel />
