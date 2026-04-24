@@ -22,8 +22,13 @@
     <!-- React App Root Container -->
     <div id="root"></div>
     
-    <!-- AIDA Widget JavaScript -->
-    <script src="https://testaida.iverse.space/aida-widget.umd.js"></script>
+    <!-- NEW: Load the ES Module and attach it to the window object -->
+    <!-- NEW: Load the ES Module and attach it to the window object -->
+    <script type="module">
+      // Notice the "* as AidaWidget" here
+      import * as AidaWidget from 'https://testaida.iverse.space/aida-widget.es.js';
+      window.AidaWidget = AidaWidget;
+    </script>
 
     <!-- React App Entry Script -->
     <script type="module" src="/src/index.jsx"></script>
