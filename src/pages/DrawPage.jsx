@@ -90,7 +90,8 @@ const DrawPage = () => {
     }, []);
 
     return (
-        <div className="h-screen w-full bg-aida-light">
+        // Remove h-screen class and use min-h-screen instead
+        <div className="w-full bg-aida-light" style={{ position: 'absolute', inset: 0 }}>
             {/* Excalidraw Component taking the full screen */}
             <div className="absolute inset-0">
                 <React.Suspense fallback={
