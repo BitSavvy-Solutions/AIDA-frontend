@@ -9,9 +9,12 @@ const DrawPage = () => {
     const excalidrawRef = useRef(null);
 
     return (
-        <div className="w-full bg-aida-light" style={{ position: 'absolute', inset: 0 }}>
-            {/* Excalidraw Component taking the full screen */}
-            <div className="absolute inset-0">
+        // Use standard document flow (h-screen) instead of absolute positioning
+        // so the widget's body margin adjustments naturally push this container.
+        <div className="w-full h-screen bg-aida-light flex flex-col">
+            
+            {/* Flex-1 allows this container to fill the available height/width dynamically */}
+            <div className="flex-1 relative">
                 <React.Suspense fallback={
                     <div className="absolute inset-0 flex items-center justify-center bg-aida-light">
                         <div className="animate-pulse text-aida-text-muted flex flex-col items-center">
@@ -23,6 +26,7 @@ const DrawPage = () => {
                     <ExcalidrawWrapper ref={excalidrawRef} />
                 </React.Suspense>
             </div>
+            
         </div>
     );
 };
