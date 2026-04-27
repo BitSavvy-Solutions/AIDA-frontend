@@ -48,20 +48,50 @@ const AidaWidget = () => {
                             retryMessage: true,
                             customInstructions: true,
                             historyProjects: true,
-                            // ✅ NEW: Added getPageContext to read the current page
                             getPageContext: async () => {
                                 console.log("[AIDA] Extracting page context...");
                                 
-                                // Grab the main content area to avoid header/footer noise
-                                // Fallback to document.body if <main> doesn't exist
-                                const contentElement = document.querySelector('main') || document.body;
-                                const textContent = contentElement.innerText;
-                                
-                                // Use the document title for the attachment name
-                                const pageTitle = document.title || 'AIDA Page';
+                                let textContent = "";
+                                let fileName = `${document.title || 'AIDA Page'} Context.txt`;
+
+                                // 1. Check if we are on the Draw page and Excalidraw is active
+                                if (window.excalidrawAPI) {
+                                    console.log("[AIDA] Excalidraw detected, extracting raw JSON content...");
+                                    
+                                    // Get elements, filter out deleted ones and images to save tokens
+                                    const elements = window.excalidrawAPI.getSceneElements()
+                                        .filter(el => !el.isDeleted && el.type !== 'image');
+                                    
+                                    const appState = window.excalidrawAPI.getAppState();
+
+                                    // Construct the exact JSON structure of an .excalidraw file
+                                    const excalidrawJSON = {
+                                        type: "excalidraw",
+                                        version: 2,
+                                        source: "https://excalidraw.com",
+                                        elements: elements,
+                                        appState: {
+                                            gridSize: appState.gridSize || 20,
+                                            gridStep: appState.gridStep || 5,
+                                            gridModeEnabled: appState.gridModeEnabled || false,
+                                            viewBackgroundColor: appState.viewBackgroundColor || "#ffffff",
+                                            lockedMultiSelections: {}
+                                        },
+                                        files: {} // Keep files empty as requested
+                                    };
+
+                                    // Convert to formatted JSON string
+                                    textContent = JSON.stringify(excalidrawJSON, null, 2);
+                                    fileName = "Excalidraw_Canvas.json"; // Use .json so the AI parses it correctly
+                                } 
+                                // 2. Fallback to standard DOM extraction for other pages
+                                else {
+                                    const contentElement = document.querySelector('main') || document.body;
+                                    textContent = contentElement.innerText;
+                                }
                                 
                                 return {
-                                    name: `${pageTitle} Context.txt`,
+                                    name: fileName,
                                     content: textContent
                                 };
                             },
