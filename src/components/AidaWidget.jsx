@@ -6,7 +6,6 @@ import { useAuth } from '../contexts/AuthContext';
 const WIDGET_CONTAINER_ID = 'aida-global-widget-container';
 
 const AidaWidget = () => {
-    // CHANGED: Added apiToken to the destructured context values
     const { user, isAuthenticated, authLoading, apiToken } = useAuth();
 
     useEffect(() => {
@@ -22,10 +21,6 @@ const AidaWidget = () => {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                // CHANGED: Pass the API token so the widget can include it in
-                // its Authorization header when calling /iverse_agent.
-                // The widget's own backend calls will need to be updated
-                // separately to use this token in the header.
                 apiToken: apiToken || null,
             };
         } else {
@@ -53,6 +48,23 @@ const AidaWidget = () => {
                             retryMessage: true,
                             customInstructions: true,
                             historyProjects: true,
+                            // ✅ NEW: Added getPageContext to read the current page
+                            getPageContext: async () => {
+                                console.log("[AIDA] Extracting page context...");
+                                
+                                // Grab the main content area to avoid header/footer noise
+                                // Fallback to document.body if <main> doesn't exist
+                                const contentElement = document.querySelector('main') || document.body;
+                                const textContent = contentElement.innerText;
+                                
+                                // Use the document title for the attachment name
+                                const pageTitle = document.title || 'AIDA Page';
+                                
+                                return {
+                                    name: `${pageTitle} Context.txt`,
+                                    content: textContent
+                                };
+                            },
                             paymentLink: {
                                 show: true,
                                 url: 'https://buy.stripe.com/5kQ8wO11A3y97tjcThabK00',
@@ -71,8 +83,6 @@ const AidaWidget = () => {
             console.warn(`[AIDA] Container #${WIDGET_CONTAINER_ID} not found.`);
         }
 
-    // CHANGED: Added apiToken to dependency array so the widget
-    // re-renders with the new token immediately after login
     }, [isAuthenticated, user, authLoading, apiToken]);
 
     return null;
