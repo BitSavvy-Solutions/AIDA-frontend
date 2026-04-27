@@ -10,7 +10,8 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
-import SourcePage from './pages/SourcePage';       // ← new
+import SourcePage from './pages/SourcePage';
+import DrawPage from './pages/DrawPage';
 import AidaWidget from './components/AidaWidget';
 import Account from './pages/Account';
 
@@ -23,36 +24,36 @@ const AppContent = () => {
 
     return (
         <Router>
-            <div className="min-h-screen flex flex-col bg-aida-light">
-                <Header />
+            {/* Wrap everything in a fragment so the Router has a single child */}
+            <>
+                <Routes>
+                    {/* DrawPage route without the standard layout */}
+                    <Route path="/draw" element={<DrawPage />} />
+                    
+                    {/* All other routes with standard layout */}
+                    <Route path="/*" element={
+                        <div className="min-h-screen flex flex-col bg-aida-light">
+                            <Header />
+                            <main className="flex-grow">
+                                <Routes>
+                                    <Route path="/"       element={<HomePage />} />
+                                    <Route path="/login"  element={<LoginPage />} />
+                                    <Route path="/source" element={<SourcePage />} />
+                                    <Route path="/account" element={<Account />} />
+                                    <Route path="*"       element={<Navigate to="/" replace />} />
+                                </Routes>
+                            </main>
+                            <Footer />
+                        </div>
+                    } />
+                </Routes>
 
-                <main className="flex-grow">
-                    <Routes>
-                        <Route path="/"       element={<HomePage />} />
-                        <Route path="/login"  element={<LoginPage />} />
-                        <Route path="/source" element={<SourcePage />} />  {/* ← new */}
-                        <Route path="/account" element={<Account />} />  {/* ← new */}
-                        <Route path="*"       element={<Navigate to="/" replace />} />
-                    </Routes>
-                </main>
-
-                <Footer />
-
-                {/* Global fixed container — the widget script renders its UI here */}
-                <div
-                    id="aida-global-widget-container"
-                    className="fixed bottom-5 right-5 z-[1000]"
-                />
-
-                {/*
-                  Widget controller. Keyed on auth state so React unmounts/remounts
-                  it on login/logout, causing the widget to re-render with the correct
-                  user context without a full page reload.
-                */}
+                {/* Global Widget container - Moved outside Routes so it shows on ALL pages including /draw */}
+                <div id="aida-global-widget-container" className="fixed bottom-5 right-5 z-[1000]" />
                 {!authLoading && (
                     <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
                 )}
-            </div>
+            </>
         </Router>
     );
 };
