@@ -375,13 +375,13 @@ const HomePage = () => {
     const { isAuthenticated } = useAuth();
 
     // ADDED: State for user count
-    const [userCount, setUserCount] = useState(null);
+    const [userStats, setUserStats] = useState(null);
 
     // ADDED: Fetch count on mount
     useEffect(() => {
         userService.getUserCount()
-            .then(count => setUserCount(count))
-            .catch(err => console.error("Failed to fetch user count:", err));
+            .then(stats => setUserStats(stats))
+            .catch(err => console.error("Failed to fetch user stats:", err));
     }, []);
 
     const handleStartChatting = useCallback(() => {
@@ -481,16 +481,21 @@ const HomePage = () => {
                     No Daily Limits.
                 </h1>
 
-                {/* 🔥 ADDED: Display user count right under the main heading */}
-                {userCount !== null && userCount > 0 && (
-                    <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-aida-card border border-aida-border shadow-sm">
-                        <span className="relative flex h-3 w-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                        </span>
-                        <span className="text-sm font-medium text-aida-text-muted">
-                            Join <span className="text-aida-dark font-bold">{userCount.toLocaleString()}</span> registered users
-                        </span>
+                {/* 🔥 CHANGED to: Display the active user stats */}
+                {userStats && userStats.total > 0 && (
+                    <div className="mt-6 flex flex-col items-center gap-2">
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-aida-card border border-aida-border shadow-sm">
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                            </span>
+                            <span className="text-sm font-medium text-aida-text-muted">
+                                <span className="text-aida-dark font-bold">{userStats.dau}</span> earthlings used AIDA in the last 24h
+                            </span>
+                        </div>
+                        <p className="text-xs font-medium text-aida-text-muted/70">
+                            {userStats.wau} this week • {userStats.mau} this month • {userStats.total} total registered
+                        </p>
                     </div>
                 )}
 

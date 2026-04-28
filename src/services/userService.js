@@ -157,13 +157,13 @@ export const registerOrLoginUser = async (oauthData) => {
 
 /**
  * Fetches the total number of registered users (cached on backend).
- * @returns {Promise<number>} The total user count.
+ * @returns {Promise<object>} The total user count.
  */
 const getUserCount = async () => {
     const url = buildUrl('/users', null, { action: 'count' });
     const response = await makeRequest(url, { method: 'GET' });
     const data = await parseResponse(response);
-    return data.count || 0;
+    return data.data || { total: 0, dau: 0, wau: 0, mau: 0 };
 };
 
 const userService = {
