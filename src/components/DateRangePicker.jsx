@@ -80,14 +80,14 @@ export default function DateRangePicker({ startDate, endDate, onDateChange }) {
                     type="date" 
                     value={startDate}
                     onChange={(e) => handleManualDateChange('start', e.target.value)}
-                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors"
+                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors dark:[color-scheme:dark]"
                 />
                 <span className="text-aida-text-muted">-</span>
                 <input 
                     type="date" 
                     value={endDate}
                     onChange={(e) => handleManualDateChange('end', e.target.value)}
-                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors"
+                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors dark:[color-scheme:dark]"
                 />
             </div>
         </div>
