@@ -3,6 +3,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default Light Mode Colors */
+:root {
+  --color-aida-light: #f9fafb;
+  --color-aida-card: #ffffff;
+  --color-aida-border: #e5e7eb;
+  --color-aida-dark: #111827;
+  --color-aida-text-muted: #6b7280;
+  --color-border-subtle: #f3f4f6;
+}
+
+/* Dark Mode Colors */
+.dark {
+  --color-aida-light: #111827;
+  --color-aida-card: #1F2937;
+  --color-aida-border: #374151;
+  --color-aida-dark: #E5E7EB;
+  --color-aida-text-muted: #9CA3AF;
+  --color-border-subtle: rgba(31, 41, 55, 0.6);
+}
+
 body {
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;

@@ -57,11 +57,11 @@ export default function DateRangePicker({ startDate, endDate, onDateChange }) {
         <div className="flex flex-col md:flex-row gap-3 items-end">
             {/* Preset Dropdown */}
             <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Date Range</label>
+                <label className="block text-xs font-medium text-aida-text-muted mb-1 transition-colors">Date Range</label>
                 <select 
                     value={datePreset}
                     onChange={(e) => handlePresetChange(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-700 focus:ring-pink-500 focus:border-pink-500 bg-white cursor-pointer"
+                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent cursor-pointer transition-colors"
                 >
                     <option value="today">Today</option>
                     <option value="yesterday">Yesterday</option>
@@ -80,14 +80,14 @@ export default function DateRangePicker({ startDate, endDate, onDateChange }) {
                     type="date" 
                     value={startDate}
                     onChange={(e) => handleManualDateChange('start', e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-700 focus:ring-pink-500 focus:border-pink-500"
+                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors"
                 />
-                <span className="text-gray-400">-</span>
+                <span className="text-aida-text-muted">-</span>
                 <input 
                     type="date" 
                     value={endDate}
                     onChange={(e) => handleManualDateChange('end', e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-700 focus:ring-pink-500 focus:border-pink-500"
+                    className="border border-aida-border rounded-md px-3 py-1.5 text-sm text-aida-dark focus:ring-aida-pink focus:border-aida-pink bg-transparent transition-colors"
                 />
             </div>
         </div>

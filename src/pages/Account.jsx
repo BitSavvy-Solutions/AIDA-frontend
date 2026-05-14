@@ -6,112 +6,122 @@ import BuyCreditsModal from '../components/BuyCreditsModal';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Account() {
-    // Get user from auth context for the Stripe modal
     const { user } = useAuth();
+    const API_BASE_URL = `${config.FASTAPI_URL}/user`;
 
-    // Helper to get today's date for initial state
     const getTodayString = () => {
         const date = new Date();
         const offset = date.getTimezoneOffset() * 60000;
         return new Date(date.getTime() - offset).toISOString().split('T')[0];
     };
 
-    // State for UI tabs
-    const [activeTab, setActiveTab] = useState('credits'); 
+    // Persist tab on refresh
+    const [activeTab, setActiveTab] = useState(() => {
+        return localStorage.getItem('accountActiveTab') || 'credits';
+    }); 
+    
     const [isModalOpen, setIsModalOpen] = useState(false);
-
-    // State for your API data
     const [profile, setProfile] = useState(null);
-    const [creditHistory, setCreditHistory] = useState([]);
-    const [usageLogs, setUsageLogs] = useState([]);
+    
+    // New Cursor Pagination State
+    const [tableData, setTableData] = useState([]);
+    const [totalUsageCost, setTotalUsageCost] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-    // Pagination & Filtering State
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
-
-    // Default to Today
     const [startDate, setStartDate] = useState(getTodayString());
     const [endDate, setEndDate] = useState(getTodayString());
 
-    const API_BASE_URL = `${config.FASTAPI_URL}/user`;
-
+    // 1. Fetch Profile (Runs once)
     useEffect(() => {
-        const fetchAccountData = async () => {
-            // 1. Grab the token from localStorage
+        const fetchProfile = async () => {
             const token = localStorage.getItem("aidaToken");
-
-            if (!token) {
-                console.warn("No aidaToken found in local storage. User might not be logged in.");
-                setLoading(false);
-                return; // Stop execution if there's no token
-            }
-
+            if (!token) return;
             try {
-                setLoading(true);
-                
-                // 2. Set up the headers with the API key
-                const fetchOptions = {
-                    method: 'GET',
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${token}` 
-                    }
-                };
-
-                // 3. Fetch data WITHOUT the ?email= parameter
-                const profileRes = await fetch(`${API_BASE_URL}/profile`, fetchOptions);
-                const profileData = await profileRes.json();
-                setProfile(profileData);
-
-                // Credit History & Usage Logs
-                const [creditsRes, usageRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/credits/history`, fetchOptions),
-                    fetch(`${API_BASE_URL}/usage/logs`, fetchOptions)
-                ]);
-
-                const creditsData = await creditsRes.json();
-                const usageData = await usageRes.json();
-
-                // 3. Sort them separately (newest first)
-                setCreditHistory((creditsData || []).sort((a, b) => new Date(b.date) - new Date(a.date)));
-                setUsageLogs((usageData || []).sort((a, b) => new Date(b.date) - new Date(a.date)));
-            
+                const res = await fetch(`${API_BASE_URL}/profile`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json();
+                setProfile(data);
             } catch (error) {
-                console.error("Error fetching account data:", error);
-            } finally {
-                setLoading(false);
+                console.error("Error fetching profile:", error);
             }
         };
-
-        fetchAccountData();
+        fetchProfile();
     }, []);
 
-    // Reset page to 1 when switching tabs or changing dates
+    // 2. Fetch Table Data (Handles both initial load and "Load More")
+    const fetchTableData = async (isLoadMore = false) => {
+        const token = localStorage.getItem("aidaToken");
+        if (!token) return;
+
+        if (isLoadMore) {
+            setIsLoadingMore(true);
+        } else {
+            setLoading(true);
+        }
+
+        localStorage.setItem('accountActiveTab', activeTab);
+
+        try {
+            let url = '';
+            if (activeTab === 'credits') {
+                url = `${API_BASE_URL}/credits/history?limit=50`;
+            } else {
+                url = `${API_BASE_URL}/usage/logs?limit=50`;
+                if (startDate) url += `&start_date=${startDate}`;
+                if (endDate) url += `&end_date=${endDate}`;
+            }
+
+            // Apply Cursor if loading more
+            if (isLoadMore && tableData.length > 0) {
+                const lastItemDate = tableData[tableData.length - 1].date;
+                url += `&cursor=${encodeURIComponent(lastItemDate)}`;
+            }
+
+            const res = await fetch(url, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            const data = await res.json();
+
+            if (isLoadMore) {
+                setTableData(prev => [...prev, ...(data.data || [])]);
+            } else {
+                setTableData(data.data || []);
+            }
+            
+            setHasMore(data.has_more || false);
+            if (activeTab === 'usage') {
+                setTotalUsageCost(data.total_cost || 0);
+            }
+
+        } catch (error) {
+            console.error("Error fetching table data:", error);
+        } finally {
+            setLoading(false);
+            setIsLoadingMore(false);
+        }
+    };
+
+    // Trigger fetch when tab or dates change
     useEffect(() => {
-        setCurrentPage(1);
+        fetchTableData(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, startDate, endDate]);
 
-    // Helper to format dates nicely
+    // Formatters
     const formatDate = (dateString) => {
-        const options = { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        };
+        const options = { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' };
         return new Date(dateString).toLocaleDateString('en-US', options);
     };
 
-    // Fix 1: Format balance to exactly 2 decimals and handle -$ format
     const formatBalance = (amount) => {
         if (!amount) return "$0.00";
         const absAmount = Math.abs(amount).toFixed(2);
-        return amount < 0 ? `-$${absAmount}` : `${absAmount}`;
+        return amount < 0 ? `-$${absAmount}` : `$${absAmount}`;
     };
 
-    // Format for table amounts (up to 8 decimals for tiny AI costs)
     const formatTableAmount = (amount) => {
         if (!amount) return "0.00";
         return new Intl.NumberFormat('en-US', {
@@ -120,77 +130,43 @@ export default function Account() {
         }).format(amount);
     };
 
-    // Filtering Logic (Fix 3)
-    const getFilteredData = () => {
-        let data = activeTab === 'credits' ? creditHistory : usageLogs;
-        
-        if (activeTab === 'usage' && (startDate || endDate)) {
-            data = data.filter(item => {
-                const itemDate = new Date(item.date);
-                const start = startDate ? new Date(startDate) : new Date(0);
-                const end = endDate ? new Date(endDate) : new Date('2100-01-01');
-                
-                // Make sure the end date includes the whole day
-                if (endDate) end.setHours(23, 59, 59, 999);
-                
-                return itemDate >= start && itemDate <= end;
-            });
-        }
-        return data;
-    };
-
-    const filteredData = getFilteredData();
-    
-    // Pagination Logic (Fix 4)
-    const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
-    const currentData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-    // Total Cost Calculation (Fix 5)
-    const totalUsageCost = activeTab === 'usage' 
-        ? filteredData.reduce((sum, log) => sum + Math.abs(log.amount || 0), 0) 
-        : 0;
-
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row pt-16">
+        <div className="min-h-screen bg-aida-light flex flex-col md:flex-row transition-colors duration-200">
             
-            {/* Sidebar Navigation */}
-            <aside className="w-full md:w-64 bg-white border-r border-gray-200 p-4 flex flex-col gap-2">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
+            <aside className="w-full md:w-64 bg-transparent border-r border-aida-border p-4 flex flex-col gap-2 transition-colors duration-200">
+                <div className="text-xs font-semibold text-aida-text-muted uppercase tracking-wider mb-2 px-3">
                     Account
                 </div>
-                
                 <button 
                     onClick={() => setActiveTab('usage')}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md w-full text-left font-medium transition-colors ${
-                        activeTab === 'usage' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                        activeTab === 'usage' ? 'bg-gray-200 dark:bg-gray-700 text-aida-dark shadow-sm' : 'text-aida-text-muted hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                     <FiList /> Usage Logs
                 </button>
-                
                 <button 
                     onClick={() => setActiveTab('credits')}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md w-full text-left font-medium transition-colors ${
-                        activeTab === 'credits' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                        activeTab === 'credits' ? 'bg-gray-200 dark:bg-gray-700 text-aida-dark shadow-sm' : 'text-aida-text-muted hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                     <FiCreditCard /> Credits
                 </button>
             </aside>
 
-            {/* Main Content Area */}
-            <main className="flex-1 p-6 md:p-10 max-w-5xl">
-                <h1 className="text-2xl font-bold text-gray-900 mb-6">
+            {/* Expanded width to max-w-7xl */}
+            <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">
+                <h1 className="text-2xl font-bold text-aida-dark mb-6 transition-colors">
                     {activeTab === 'credits' ? 'Credits' : 'Usage Logs'}
                 </h1>
 
-                {/* Only show Balance Card on the Credits tab */}
                 {activeTab === 'credits' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <h2 className="text-sm font-medium text-gray-500 mb-2">Current Balance</h2>
-                            <div className={`text-4xl font-bold mb-6 ${profile?.balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                                {loading ? "..." : formatBalance(profile?.balance || 0)}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="bg-aida-card p-6 rounded-xl border border-aida-border shadow-sm transition-colors">
+                            <h2 className="text-sm font-medium text-aida-text-muted mb-2">Current Balance</h2>
+                            <div className={`text-4xl font-bold mb-6 ${profile?.balance < 0 ? 'text-red-500' : 'text-aida-dark'}`}>
+                                {!profile ? "..." : formatBalance(profile.balance)}
                             </div>
                             <button 
                                 onClick={() => setIsModalOpen(true)}
@@ -202,10 +178,8 @@ export default function Account() {
                     </div>
                 )}
 
-                {/* Usage Filters & Summary */}
                 {activeTab === 'usage' && (
-                    <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                        
+                    <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 bg-transparent p-4 rounded-xl border border-aida-border transition-colors">
                         <DateRangePicker 
                             startDate={startDate} 
                             endDate={endDate} 
@@ -214,49 +188,42 @@ export default function Account() {
                                 setEndDate(end);
                             }} 
                         />
-
                         <div className="text-right mt-4 md:mt-0">
-                            <div className="text-xs font-medium text-gray-500 mb-1">Total Cost (Selected Period)</div>
-                            <div className="text-xl font-bold text-gray-900">
+                            <div className="text-xs font-medium text-aida-text-muted mb-1">Total Cost (Selected Period)</div>
+                            <div className="text-xl font-bold text-aida-dark">
                                 ${totalUsageCost.toFixed(2)}
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* History Table Section */}
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                            {activeTab === 'credits' ? 'Credit History' : 'Usage History'}
-                        </h3>
-                    </div>
+                <div className="border border-aida-border rounded-xl overflow-hidden transition-colors">
 
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-gray-500">
-                            <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                        <table className="w-full text-sm text-left text-aida-text-muted">
+                            <thead className="text-xs text-aida-dark uppercase bg-aida-card border-b border-aida-border transition-colors">
                                 <tr>
                                     <th className="px-6 py-3">Date</th>
-                                    <th className="px-6 py-3">{activeTab === 'credits' ? 'Description' : 'Model'}</th> {/* Fix 2: Dynamic Column Name */}
+                                    <th className="px-6 py-3">{activeTab === 'credits' ? 'Description' : 'Model'}</th>
                                     <th className="px-6 py-3 text-right">Amount</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {loading ? (
                                     <tr><td colSpan="3" className="px-6 py-4 text-center">Loading data...</td></tr>
-                                ) : currentData.length === 0 ? (
+                                ) : tableData.length === 0 ? (
                                     <tr><td colSpan="3" className="px-6 py-4 text-center">No transactions found.</td></tr>
                                 ) : (
-                                    currentData.map((tx) => (
-                                        <tr key={tx.transactionId || Math.random()} className="bg-white border-b hover:bg-gray-50">
+                                    tableData.map((tx) => (
+                                        <tr key={tx.transactionId || Math.random()} className="border-b border-aida-border-subtle last:border-0 hover:bg-aida-card/50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap">{formatDate(tx.date)}</td>
-                                            <td className="px-6 py-4 font-medium text-gray-900">
+                                            <td className="px-6 py-4 font-medium text-aida-dark">
                                                 {activeTab === 'credits' 
                                                     ? (tx.description?.includes("Purchased") ? "Account Top-up" : tx.description)
                                                     : (tx.model || tx.description)}
                                             </td>
                                             <td className={`px-6 py-4 text-right font-medium ${
-                                                tx.amount > 0 ? 'text-green-600' : 'text-gray-900'
+                                                tx.amount > 0 ? 'text-green-500' : 'text-aida-dark'
                                             }`}>
                                                 {tx.amount > 0 ? '+$' : tx.amount < 0 ? '-$' : '$'}
                                                 {formatTableAmount(Math.abs(tx.amount))}
@@ -268,33 +235,21 @@ export default function Account() {
                         </table>
                     </div>
 
-                    {/* Fix 4: Pagination Controls */}
-                    {!loading && filteredData.length > 0 && (
-                        <div className="p-4 border-t border-gray-200 flex justify-center items-center gap-4 bg-gray-50">
+                    {/* Load More Button */}
+                    {!loading && hasMore && (
+                        <div className="p-4 border-t border-aida-border flex justify-center bg-transparent">
                             <button 
-                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                disabled={currentPage === 1}
-                                className="px-3 py-1 rounded border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
+                                onClick={() => fetchTableData(true)}
+                                disabled={isLoadingMore}
+                                className="px-6 py-2 rounded-lg border border-aida-border bg-aida-card text-aida-dark font-medium hover:opacity-80 disabled:opacity-50 transition-all"
                             >
-                                &lt;
-                            </button>
-                            <span className="text-sm font-medium text-gray-700">
-                                {currentPage} of {totalPages}
-                            </span>
-                            <button 
-                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                disabled={currentPage === totalPages}
-                                className="px-3 py-1 rounded border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
-                            >
-                                &gt;
+                                {isLoadingMore ? 'Loading...' : 'Load More'}
                             </button>
                         </div>
                     )}
-
                 </div>
             </main>
 
-            {/* Buy Credits Modal */}
             <BuyCreditsModal 
                 userId={user?.id} 
                 isOpen={isModalOpen} 
