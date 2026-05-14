@@ -131,16 +131,16 @@ export default function Account() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row pt-16">
+        <div className="min-h-screen bg-aida-light flex flex-col md:flex-row transition-colors duration-200">
             
-            <aside className="w-full md:w-64 bg-white border-r border-gray-200 p-4 flex flex-col gap-2">
-                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-4 px-3">
+            <aside className="w-full md:w-64 bg-transparent border-r border-aida-border p-4 flex flex-col gap-2 transition-colors duration-200">
+                <div className="text-xs font-semibold text-aida-text-muted uppercase tracking-wider mb-2 px-3">
                     Account
                 </div>
                 <button 
                     onClick={() => setActiveTab('usage')}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md w-full text-left font-medium transition-colors ${
-                        activeTab === 'usage' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                        activeTab === 'usage' ? 'bg-gray-200 dark:bg-gray-700 text-aida-dark shadow-sm' : 'text-aida-text-muted hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                     <FiList /> Usage Logs
@@ -148,7 +148,7 @@ export default function Account() {
                 <button 
                     onClick={() => setActiveTab('credits')}
                     className={`flex items-center gap-3 px-3 py-2 rounded-md w-full text-left font-medium transition-colors ${
-                        activeTab === 'credits' ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+                        activeTab === 'credits' ? 'bg-gray-200 dark:bg-gray-700 text-aida-dark shadow-sm' : 'text-aida-text-muted hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                 >
                     <FiCreditCard /> Credits
@@ -156,16 +156,16 @@ export default function Account() {
             </aside>
 
             {/* Expanded width to max-w-7xl */}
-            <main className="flex-1 p-6 md:p-10 max-w-7xl w-full mx-auto">
-                <h1 className="text-2xl font-bold text-gray-900 mb-6">
+            <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">
+                <h1 className="text-2xl font-bold text-aida-dark mb-6 transition-colors">
                     {activeTab === 'credits' ? 'Credits' : 'Usage Logs'}
                 </h1>
 
                 {activeTab === 'credits' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <h2 className="text-sm font-medium text-gray-500 mb-2">Current Balance</h2>
-                            <div className={`text-4xl font-bold mb-6 ${profile?.balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div className="bg-aida-card p-6 rounded-xl border border-aida-border shadow-sm transition-colors">
+                            <h2 className="text-sm font-medium text-aida-text-muted mb-2">Current Balance</h2>
+                            <div className={`text-4xl font-bold mb-6 ${profile?.balance < 0 ? 'text-red-500' : 'text-aida-dark'}`}>
                                 {!profile ? "..." : formatBalance(profile.balance)}
                             </div>
                             <button 
@@ -179,7 +179,7 @@ export default function Account() {
                 )}
 
                 {activeTab === 'usage' && (
-                    <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4 bg-transparent p-4 rounded-xl border border-aida-border transition-colors">
                         <DateRangePicker 
                             startDate={startDate} 
                             endDate={endDate} 
@@ -189,24 +189,19 @@ export default function Account() {
                             }} 
                         />
                         <div className="text-right mt-4 md:mt-0">
-                            <div className="text-xs font-medium text-gray-500 mb-1">Total Cost (Selected Period)</div>
-                            <div className="text-xl font-bold text-gray-900">
+                            <div className="text-xs font-medium text-aida-text-muted mb-1">Total Cost (Selected Period)</div>
+                            <div className="text-xl font-bold text-aida-dark">
                                 ${totalUsageCost.toFixed(2)}
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-gray-200 flex items-center justify-between">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                            {activeTab === 'credits' ? 'Credit History' : 'Usage History'}
-                        </h3>
-                    </div>
+                <div className="border border-aida-border rounded-xl overflow-hidden transition-colors">
 
                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-gray-500">
-                            <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                        <table className="w-full text-sm text-left text-aida-text-muted">
+                            <thead className="text-xs text-aida-dark uppercase bg-aida-card border-b border-aida-border transition-colors">
                                 <tr>
                                     <th className="px-6 py-3">Date</th>
                                     <th className="px-6 py-3">{activeTab === 'credits' ? 'Description' : 'Model'}</th>
@@ -220,15 +215,15 @@ export default function Account() {
                                     <tr><td colSpan="3" className="px-6 py-4 text-center">No transactions found.</td></tr>
                                 ) : (
                                     tableData.map((tx) => (
-                                        <tr key={tx.transactionId || Math.random()} className="bg-white border-b hover:bg-gray-50">
+                                        <tr key={tx.transactionId || Math.random()} className="border-b border-aida-border-subtle last:border-0 hover:bg-aida-card/50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap">{formatDate(tx.date)}</td>
-                                            <td className="px-6 py-4 font-medium text-gray-900">
+                                            <td className="px-6 py-4 font-medium text-aida-dark">
                                                 {activeTab === 'credits' 
                                                     ? (tx.description?.includes("Purchased") ? "Account Top-up" : tx.description)
                                                     : (tx.model || tx.description)}
                                             </td>
                                             <td className={`px-6 py-4 text-right font-medium ${
-                                                tx.amount > 0 ? 'text-green-600' : 'text-gray-900'
+                                                tx.amount > 0 ? 'text-green-500' : 'text-aida-dark'
                                             }`}>
                                                 {tx.amount > 0 ? '+$' : tx.amount < 0 ? '-$' : '$'}
                                                 {formatTableAmount(Math.abs(tx.amount))}
@@ -242,11 +237,11 @@ export default function Account() {
 
                     {/* Load More Button */}
                     {!loading && hasMore && (
-                        <div className="p-4 border-t border-gray-200 flex justify-center bg-gray-50">
+                        <div className="p-4 border-t border-aida-border flex justify-center bg-transparent">
                             <button 
                                 onClick={() => fetchTableData(true)}
                                 disabled={isLoadingMore}
-                                className="px-6 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-100 disabled:opacity-50 transition-colors"
+                                className="px-6 py-2 rounded-lg border border-aida-border bg-aida-card text-aida-dark font-medium hover:opacity-80 disabled:opacity-50 transition-all"
                             >
                                 {isLoadingMore ? 'Loading...' : 'Load More'}
                             </button>
