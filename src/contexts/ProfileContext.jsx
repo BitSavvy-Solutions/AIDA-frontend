@@ -83,7 +83,22 @@ export const ProfileProvider = ({ children }) => {
                             }
                         }
 
-                        await Promise.all(result.map(p => profilesDb.put(p)));
+                        // Remove orphaned local-only profiles whose name is already
+                        // covered by a server-linked profile, then persist.
+                        const serverNames = new Set(
+                            result.filter(p => p.serverProfileId).map(p => p.name)
+                        );
+                        const deduped = [];
+                        const removed = [];
+                        for (const p of result) {
+                            if (!p.serverProfileId && serverNames.has(p.name)) {
+                                removed.push(p.id);
+                            } else {
+                                deduped.push(p);
+                            }
+                        }
+                        await Promise.all(deduped.map(p => profilesDb.put(p)));
+                        await Promise.all(removed.map(id => profilesDb.remove(id)));
                         merged = await profilesDb.getAll();
                     } catch (e) {
                         console.error('Failed to sync profiles from server:', e);
@@ -138,7 +153,7 @@ export const ProfileProvider = ({ children }) => {
                 id: localProfileId,
                 name,
                 syncEnabled: Boolean(syncEnabled),
-                serverProfileId: null,   // filled in below if sync enabled
+                serverProfileId: null,
                 kdf: { algo: KDF_ALGO, iterations: KDF_ITERATIONS, salt },
                 wrappedDek,
                 wrappedDekRecovery,
@@ -156,7 +171,7 @@ export const ProfileProvider = ({ children }) => {
                 // Register on server. Server generates its own id.
                 const serverProfile = await vaultApi.createProfile({
                     name,
-                    appId: 'aida', 
+                    appId: 'aida',
                     kdf: record.kdf,
                     wrappedDek,
                     wrappedDekRecovery,

@@ -11,8 +11,9 @@ import { useProfileLauncher } from '../contexts/ProfileLauncherContext';
 import { countPendingItems } from '../services/snapshot';
 import ProfileUnlockModal from './ProfileUnlockModal';
 
-// Compact per-profile sync badge. Active profile computes live counts;
-// inactive profiles fall back to the version recorded at last sync.
+// Compact per-profile sync badge. Active profile shows synced/total chats.
+// Inactive synced profiles show a plain checkmark. Local-only profiles
+// show a "local" tag.
 const SyncBadge = ({ profile, isActive }) => {
     const [info, setInfo] = useState(null);
 
@@ -25,7 +26,7 @@ const SyncBadge = ({ profile, isActive }) => {
         if (isActive) {
             countPendingItems(profile).then(r => { if (alive) setInfo(r); });
         } else {
-            setInfo({ version: profile.lastSyncedVersion || 0 });
+            setInfo({ synced: true });
         }
         return () => { alive = false; };
     }, [profile, isActive]);
@@ -40,20 +41,27 @@ const SyncBadge = ({ profile, isActive }) => {
     if (!info) return null;
 
     if (isActive && info.local != null) {
-        const clean = !info.dirty && info.synced >= info.local;
+        const pending = Math.max(0, info.local - info.synced);
+        const clean = !info.dirty && pending === 0;
+        const title = clean
+            ? 'Fully synced'
+            : pending > 0
+                ? `${pending} item${pending === 1 ? '' : 's'} pending upload`
+                : 'Sync needed';
         return (
             <span
                 className={`flex items-center gap-1 text-[10px] ${clean ? 'text-green-600' : 'text-amber-500'}`}
-                title={clean ? 'Fully synced' : `${info.local - info.synced} pending upload`}
+                title={title}
             >
                 {clean ? <FiCheck className="w-3 h-3" /> : <FiUploadCloud className="w-3 h-3" />}
-                {Math.min(info.synced, info.local)}/{info.local}
+                {info.synced}/{info.local}
             </span>
         );
     }
+
     return (
-        <span className="flex items-center gap-1 text-[10px] text-green-600" title={`Synced version ${info.version ?? 0}`}>
-            <FiCheck className="w-3 h-3" /> v{info.version ?? 0}
+        <span className="flex items-center gap-1 text-[10px] text-green-600" title="Synced">
+            <FiCheck className="w-3 h-3" />
         </span>
     );
 };

@@ -225,15 +225,18 @@ export const clearLocalData = async () => {
 };
 
 // Used by the switch gate and the per-profile badge.
+// synced = how many current local chats were already uploaded in the last sync.
 export const countPendingItems = async (profileRecord) => {
     const [chats, signature] = await Promise.all([
         db.chats.toArray(),
         computeLocalSignature(),
     ]);
-    const syncedIds = new Set(profileRecord.lastSyncedChatIds || []);
+    const lastSyncedIds = new Set(profileRecord.lastSyncedChatIds || []);
+    const synced = chats.filter(c => lastSyncedIds.has(c.id)).length;
+    const dirty = signature !== profileRecord.lastSyncSignature;
     return {
         local: chats.length,
-        synced: syncedIds.size,
-        dirty: signature !== profileRecord.lastSyncSignature,
+        synced,
+        dirty,
     };
 };
