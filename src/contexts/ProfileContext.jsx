@@ -156,7 +156,7 @@ export const ProfileProvider = ({ children }) => {
                 // Register on server. Server generates its own id.
                 const serverProfile = await vaultApi.createProfile({
                     name,
-                    appId: 'AIDA', // Fixed: was 'fractant'
+                    appId: 'aida', 
                     kdf: record.kdf,
                     wrappedDek,
                     wrappedDekRecovery,

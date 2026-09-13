@@ -23,11 +23,27 @@ const request = async (path, { method = 'GET', body } = {}) => {
 
     if (!res.ok) {
         const detail = data?.detail;
-        const err = new Error(
-            (typeof detail === 'object' && detail?.error) ||
-            (typeof detail === 'string' && detail) ||
-            `Vault request failed (${res.status})`
-        );
+        let message = `Vault request failed (${res.status})`;
+    
+        if (Array.isArray(detail)) {
+            const msgs = detail
+                .map((d) => {
+                    if (typeof d === 'string') return d;
+                    if (d?.msg) {
+                        const loc = d.loc?.filter(Boolean).join(' -> ');
+                        return loc ? `${loc}: ${d.msg}` : d.msg;
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+            if (msgs.length) message = msgs.join('; ');
+        } else if (typeof detail === 'object' && detail?.error) {
+            message = detail.error;
+        } else if (typeof detail === 'string') {
+            message = detail;
+        }
+    
+        const err = new Error(message);
         err.status = res.status;
         err.detail = detail;
         throw err;
