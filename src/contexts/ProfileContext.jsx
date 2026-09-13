@@ -9,7 +9,7 @@ import {
     generateDEK, wrapDEK, makeVerifier, generateRecoveryKey,
     KDF_ALGO, KDF_ITERATIONS, bytesToB64,
 } from '../services/vaultCrypto';
-import { harvest, applySnapshot } from '../services/snapshot';
+import { harvest, applySnapshot, clearLocalData } from '../services/snapshot';
 import { useAuth } from './AuthContext';
 
 const ProfileCtx = createContext(null);
@@ -202,14 +202,10 @@ export const ProfileProvider = ({ children }) => {
     }, []);
 
     const switchProfile = useCallback(async (targetProfileId, password) => {
-        // Harvest current profile if unlocked
-        if (activeProfile && dek) {
-            const snapshot = await harvest(activeProfile);
-            await applySnapshot(snapshot); // no-op, just to be safe
-        }
+        await clearLocalData();
         await unlockProfile(targetProfileId, password);
         window.location.reload();
-    }, [activeProfile, dek, unlockProfile]);
+    }, [unlockProfile]);
 
     const value = {
         profiles,

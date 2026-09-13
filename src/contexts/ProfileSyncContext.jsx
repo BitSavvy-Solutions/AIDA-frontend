@@ -8,6 +8,7 @@ import { vaultApi, uploadBlob, downloadBlob } from '../services/vaultApi';
 import { encryptSnapshot, decryptSnapshot } from '../services/vaultCrypto';
 import {
     harvest, mergeSnapshots, applySnapshot, computeLocalSignature,
+    clearLocalData, countPendingItems,
 } from '../services/snapshot';
 import { profilesDb } from '../services/profilesDb';
 import { useProfile } from './ProfileContext';
@@ -36,12 +37,13 @@ const getDeviceLabel = () => {
 };
 
 export const ProfileSyncProvider = ({ children }) => {
-    const { activeProfile, dek } = useProfile();
+    const { activeProfile, dek, unlockProfile } = useProfile();
     const [status, setStatus] = useState('idle');
     const [lastSyncedAt, setLastSyncedAt] = useState(null);
     const [syncError, setSyncError] = useState(null);
     const [needsReload, setNeedsReload] = useState(false);
     const [remoteInfo, setRemoteInfo] = useState(null);
+    const [switchState, setSwitchState] = useState(null);
 
     const syncingRef = useRef(false);
     const syncFnRef = useRef(null);
@@ -140,6 +142,41 @@ export const ProfileSyncProvider = ({ children }) => {
         }
     }, [activeProfile, dek, pushSnapshot, afterSyncBookkeeping]);
 
+    const switchToProfile = useCallback(async (targetProfileId, password, targetName) => {
+        // 1. If a profile is active, make sure we never delete unsynced data.
+        if (activeProfile && dek) {
+            setSwitchState({ phase: 'checking', message: 'Checking for unsynced changes...' });
+            const info = await countPendingItems(activeProfile);
+            if (info.dirty) {
+                if (activeProfile.syncEnabled && activeProfile.serverProfileId) {
+                    setSwitchState({
+                        phase: 'syncing',
+                        message: `Finishing sync for "${activeProfile.name}"...`,
+                        total: info.local,
+                        done: Math.min(info.synced, info.local),
+                    });
+                    await syncFnRef.current?.();
+                    const recheck = await countPendingItems(activeProfile);
+                    if (recheck.dirty) {
+                        setSwitchState(null);
+                        throw new Error('Sync did not finish. Switch aborted, nothing was deleted.');
+                    }
+                }
+                // Local-only active profile cannot sync; UI warns before this runs.
+            }
+        }
+
+        // 2. Wipe the previous profile's workspace.
+        setSwitchState({ phase: 'clearing', message: 'Preparing a clean workspace...' });
+        await clearLocalData();
+
+        // 3. Unlock the target and reload so the widget remounts on empty state.
+        setSwitchState({ phase: 'unlocking', message: `Unlocking "${targetName || 'profile'}"...` });
+        await unlockProfile(targetProfileId, password);
+        setSwitchState(null);
+        window.location.reload();
+    }, [activeProfile, dek, unlockProfile]);
+
     useEffect(() => { syncFnRef.current = sync; }, [sync]);
 
     useEffect(() => {
@@ -160,6 +197,8 @@ export const ProfileSyncProvider = ({ children }) => {
         status, lastSyncedAt, syncError, needsReload, remoteInfo,
         syncNow: () => syncFnRef.current?.(),
         dismissReload: () => setNeedsReload(false),
+        switchToProfile,
+        switchState,
     };
 
     return <ProfileSyncCtx.Provider value={value}>{children}</ProfileSyncCtx.Provider>;

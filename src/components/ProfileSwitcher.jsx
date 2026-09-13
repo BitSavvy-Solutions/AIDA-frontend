@@ -2,22 +2,70 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     FiUser, FiLock, FiPlus, FiRefreshCw, FiCheck,
-    FiAlertCircle, FiChevronDown, FiLogIn
+    FiAlertCircle, FiChevronDown, FiLogIn, FiHardDrive, FiUploadCloud
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useProfileSync } from '../contexts/ProfileSyncContext';
 import { useProfileLauncher } from '../contexts/ProfileLauncherContext';
+import { countPendingItems } from '../services/snapshot';
 import ProfileUnlockModal from './ProfileUnlockModal';
+
+// Compact per-profile sync badge. Active profile computes live counts;
+// inactive profiles fall back to the version recorded at last sync.
+const SyncBadge = ({ profile, isActive }) => {
+    const [info, setInfo] = useState(null);
+
+    useEffect(() => {
+        let alive = true;
+        if (!profile.syncEnabled) {
+            setInfo({ localOnly: true });
+            return;
+        }
+        if (isActive) {
+            countPendingItems(profile).then(r => { if (alive) setInfo(r); });
+        } else {
+            setInfo({ version: profile.lastSyncedVersion || 0 });
+        }
+        return () => { alive = false; };
+    }, [profile, isActive]);
+
+    if (!profile.syncEnabled) {
+        return (
+            <span className="flex items-center gap-1 text-[10px] text-gray-400" title="Local only, not synced">
+                <FiHardDrive className="w-3 h-3" /> local
+            </span>
+        );
+    }
+    if (!info) return null;
+
+    if (isActive && info.local != null) {
+        const clean = !info.dirty && info.synced >= info.local;
+        return (
+            <span
+                className={`flex items-center gap-1 text-[10px] ${clean ? 'text-green-600' : 'text-amber-500'}`}
+                title={clean ? 'Fully synced' : `${info.local - info.synced} pending upload`}
+            >
+                {clean ? <FiCheck className="w-3 h-3" /> : <FiUploadCloud className="w-3 h-3" />}
+                {Math.min(info.synced, info.local)}/{info.local}
+            </span>
+        );
+    }
+    return (
+        <span className="flex items-center gap-1 text-[10px] text-green-600" title={`Synced version ${info.version ?? 0}`}>
+            <FiCheck className="w-3 h-3" /> v{info.version ?? 0}
+        </span>
+    );
+};
 
 const ProfileSwitcher = () => {
     const { isAuthenticated } = useAuth();
     const { profiles, activeProfile, lockProfile } = useProfile();
-    const { status, lastSyncedAt, syncError, syncNow } = useProfileSync();
+    const { status, lastSyncedAt, syncError, syncNow, switchToProfile, switchState } = useProfileSync();
     const { requestCreateProfile } = useProfileLauncher();
 
     const [menuOpen, setMenuOpen] = useState(false);
-    const [unlockProfile, setUnlockProfile] = useState(null);
+    const [unlockProfileTarget, setUnlockProfileTarget] = useState(null);
     const menuRef = useRef(null);
 
     useEffect(() => {
@@ -31,8 +79,8 @@ const ProfileSwitcher = () => {
 
     const StatusIcon = () => {
         if (status === 'syncing') return <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />;
-        if (status === 'success') return <FiCheck className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />;
-        if (status === 'error') return <FiAlertCircle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />;
+        if (status === 'success') return <FiCheck className="w-3.5 h-3.5 text-green-600" />;
+        if (status === 'error') return <FiAlertCircle className="w-3.5 h-3.5 text-red-600" />;
         return <FiUser className="w-3.5 h-3.5" />;
     };
 
@@ -44,6 +92,10 @@ const ProfileSwitcher = () => {
         if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
         return `${Math.floor(secs / 3600)}h ago`;
     };
+
+    const percent = switchState?.total
+        ? Math.min(100, Math.round(((switchState.done || 0) / switchState.total) * 100))
+        : null;
 
     return (
         <>
@@ -89,14 +141,15 @@ const ProfileSwitcher = () => {
                                     if (p.id === activeProfile?.id) {
                                         lockProfile();
                                     } else {
-                                        setUnlockProfile(p);
+                                        setUnlockProfileTarget(p);
                                     }
                                     setMenuOpen(false);
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
                             >
-                                <FiLock className="w-4 h-4" />
-                                <span className="flex-1">{p.name}</span>
+                                <FiLock className="w-4 h-4 flex-shrink-0" />
+                                <span className="flex-1 truncate">{p.name}</span>
+                                <SyncBadge profile={p} isActive={p.id === activeProfile?.id} />
                                 {p.id === activeProfile?.id && (
                                     <FiCheck className="w-4 h-4 text-green-600" />
                                 )}
@@ -141,10 +194,32 @@ const ProfileSwitcher = () => {
             </div>
 
             <ProfileUnlockModal
-                isOpen={Boolean(unlockProfile)}
-                onClose={() => setUnlockProfile(null)}
-                profile={unlockProfile}
+                isOpen={Boolean(unlockProfileTarget)}
+                onClose={() => setUnlockProfileTarget(null)}
+                profile={unlockProfileTarget}
             />
+
+            {switchState && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl w-72 p-5">
+                        <div className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-100">
+                            <FiRefreshCw className="w-4 h-4 animate-spin text-aida-pink" />
+                            <span>{switchState.message}</span>
+                        </div>
+                        <div className="mt-3 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-aida-pink rounded-full transition-all duration-300"
+                                style={{ width: percent != null ? `${percent}%` : '40%' }}
+                            />
+                        </div>
+                        {percent != null && (
+                            <p className="mt-1.5 text-[10px] text-gray-500">
+                                {switchState.done}/{switchState.total} synced
+                            </p>
+                        )}
+                    </div>
+                </div>
+            )}
         </>
     );
 };

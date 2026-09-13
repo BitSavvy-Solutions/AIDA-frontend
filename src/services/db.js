@@ -47,6 +47,17 @@ const bulkDelete = async (storeName, ids) => {
     });
 };
 
+const clearStore = async (storeName) => {
+    const database = await openDB();
+    return new Promise((resolve, reject) => {
+        if (!database.objectStoreNames.contains(storeName)) return resolve();
+        const tx = database.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
 const getChatsMeta = async () => {
     const database = await openDB();
     if (!database.objectStoreNames.contains('chats')) return { count: 0, msgs: 0, maxTs: 0 };
@@ -74,10 +85,12 @@ export const db = {
         bulkPut:    (items) => bulkPut('chats', items),
         bulkDelete: (ids) => bulkDelete('chats', ids),
         getMeta:    () => getChatsMeta(),
+        clear:      () => clearStore('chats'),
     },
     projects: {
         toArray:    () => getAll('projects'),
         bulkPut:    (items) => bulkPut('projects', items),
         bulkDelete: (ids) => bulkDelete('projects', ids),
+        clear:      () => clearStore('projects'),
     },
 };

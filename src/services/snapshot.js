@@ -209,3 +209,31 @@ export const computeLocalSignature = async () => {
     for (let i = 0; i < configStr.length; i++) h = ((h << 5) + h + configStr.charCodeAt(i)) >>> 0;
     return `${meta.count}:${meta.msgs}:${meta.maxTs}:${h}`;
 };
+
+// Wipes every piece of profile-scoped local state. Auth and profile registry
+// keys (aidaToken, aida-active-profile, profilesDb) intentionally survive.
+export const clearLocalData = async () => {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (LS_EXCLUDE.has(key)) continue;
+        if (LS_INCLUDE_RE.test(key) || LS_INCLUDE_EXTRA.has(key)) keys.push(key);
+    }
+    keys.forEach(k => localStorage.removeItem(k));
+    SESSION_KEYS.forEach(k => sessionStorage.removeItem(k));
+    await Promise.all([db.chats.clear(), db.projects.clear()]);
+};
+
+// Used by the switch gate and the per-profile badge.
+export const countPendingItems = async (profileRecord) => {
+    const [chats, signature] = await Promise.all([
+        db.chats.toArray(),
+        computeLocalSignature(),
+    ]);
+    const syncedIds = new Set(profileRecord.lastSyncedChatIds || []);
+    return {
+        local: chats.length,
+        synced: syncedIds.size,
+        dirty: signature !== profileRecord.lastSyncSignature,
+    };
+};

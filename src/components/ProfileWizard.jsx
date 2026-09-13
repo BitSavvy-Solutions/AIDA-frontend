@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { FiX, FiLock, FiDownload, FiCopy, FiCheck } from 'react-icons/fi';
+import { FiX, FiLock, FiDownload, FiCopy, FiCheck, FiLogIn } from 'react-icons/fi';
 import { useProfile } from '../contexts/ProfileContext';
+import { useProfileSync } from '../contexts/ProfileSyncContext';
 
 const ProfileWizard = ({ isOpen, onClose }) => {
     const { createProfile } = useProfile();
+    const { switchToProfile } = useProfileSync();
     const [step, setStep] = useState(1);
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
@@ -13,6 +15,7 @@ const ProfileWizard = ({ isOpen, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
+    const [createdRecord, setCreatedRecord] = useState(null);
 
     if (!isOpen) return null;
 
@@ -43,13 +46,23 @@ const ProfileWizard = ({ isOpen, onClose }) => {
         setLoading(true);
         setError('');
         try {
-            const { recoveryKey: key } = await createProfile({ name, password, syncEnabled });
+            const { record, recoveryKey: key } = await createProfile({ name, password, syncEnabled });
+            setCreatedRecord(record);
             setRecoveryKey(key);
             setStep(3);
         } catch (e) {
             setError(e.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleUnlockNow = async () => {
+        setError('');
+        try {
+            await switchToProfile(createdRecord.id, password, createdRecord.name);
+        } catch (e) {
+            setError(e.message);
         }
     };
 
@@ -76,6 +89,7 @@ const ProfileWizard = ({ isOpen, onClose }) => {
         setConfirmPassword('');
         setSyncEnabled(true);
         setRecoveryKey('');
+        setCreatedRecord(null);
         setError('');
         onClose();
     };
@@ -224,12 +238,24 @@ const ProfileWizard = ({ isOpen, onClose }) => {
                                 </button>
                             </div>
 
+                            {createdRecord && (
+                                <button
+                                    onClick={handleUnlockNow}
+                                    className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                >
+                                    <FiLogIn className="w-4 h-4" />
+                                    Unlock this profile now
+                                </button>
+                            )}
+
                             <button
                                 onClick={reset}
-                                className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
+                                className="w-full px-4 py-2.5 border border-aida-border rounded-lg text-aida-dark font-medium hover:bg-aida-light transition-colors"
                             >
                                 Done
                             </button>
+
+                            {error && <p className="text-sm text-red-500">{error}</p>}
                         </div>
                     )}
                 </div>
