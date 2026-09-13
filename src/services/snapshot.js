@@ -56,7 +56,7 @@ const readManagedLocalStorage = () => {
     return out;
 };
 
-export const harvest = async (profileRecord) => {
+export const harvest = async (profileRecord, { assumeCleared = false } = {}) => {
     const now = nowIso();
     const prevConfig = profileRecord.lastSyncedConfig || {};
     const currentConfig = readManagedLocalStorage();
@@ -67,9 +67,13 @@ export const harvest = async (profileRecord) => {
             ? { v, t: prevConfig[key].t }
             : { v, t: now };
     }
-    for (const key of Object.keys(prevConfig)) {
-        if (!(key in currentConfig) && prevConfig[key].v !== null) {
-            config[key] = { v: null, t: now };
+    // A workspace cleared for a profile switch is NOT a mass deletion.
+    // Only record deletions when local state genuinely represents the profile.
+    if (!assumeCleared) {
+        for (const key of Object.keys(prevConfig)) {
+            if (!(key in currentConfig) && prevConfig[key].v !== null) {
+                config[key] = { v: null, t: now };
+            }
         }
     }
 
@@ -77,10 +81,14 @@ export const harvest = async (profileRecord) => {
 
     const tombMap = new Map((profileRecord.tombstones || []).map(t => [`${t.kind}:${t.id}`, t]));
     const currentChatIds = new Set(chats.map(c => c.id));
-    for (const id of profileRecord.lastSyncedChatIds || []) {
-        if (!currentChatIds.has(id)) {
-            const k = `chat:${id}`;
-            if (!tombMap.has(k)) tombMap.set(k, { id, kind: 'chat', deletedAt: now });
+    // Same rule for chats: after a switch every chat is "missing", and
+    // fabricating tombstones here would delete the server copies on merge.
+    if (!assumeCleared) {
+        for (const id of profileRecord.lastSyncedChatIds || []) {
+            if (!currentChatIds.has(id)) {
+                const k = `chat:${id}`;
+                if (!tombMap.has(k)) tombMap.set(k, { id, kind: 'chat', deletedAt: now });
+            }
         }
     }
     const cutoff = Date.now() - TOMBSTONE_TTL_MS;

@@ -4,7 +4,7 @@ import { useProfile } from '../contexts/ProfileContext';
 import { useProfileSync } from '../contexts/ProfileSyncContext';
 
 const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
-    const { activeProfile } = useProfile();
+    const { activeProfile, unlockProfile } = useProfile();
     const { switchToProfile } = useProfileSync();
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -12,20 +12,29 @@ const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
 
     if (!isOpen || !profile) return null;
 
-    const localOnlyWarning = activeProfile && !activeProfile.syncEnabled;
+    const isSameProfile = activeProfile && activeProfile.id === profile.id;
+    const switchingAwayFromLocal =
+        activeProfile && activeProfile.id !== profile.id && !activeProfile.syncEnabled;
 
     const handleUnlock = async () => {
         setLoading(true);
         setError('');
         try {
-            await switchToProfile(profile.id, password, profile.name);
-            if (!localOnlyWarning) onClose();
+            if (isSameProfile) {
+                // Re-unlock after a page reload. No wipe, no reload.
+                await unlockProfile(profile.id, password);
+            } else {
+                await switchToProfile(profile.id, password, profile.name);
+            }
+            setPassword('');
+            onClose();
         } catch (e) {
             setError(
                 e.message === 'Incorrect password'
                     ? 'Incorrect password'
                     : (e.message || 'Failed to switch profile')
             );
+        } finally {
             setLoading(false);
         }
     };
@@ -36,7 +45,7 @@ const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
                 <div className="flex items-center justify-between p-4 border-b border-aida-border">
                     <h2 className="text-lg font-bold text-aida-dark flex items-center gap-2">
                         <FiLock className="w-5 h-5 text-aida-pink" />
-                        Unlock Profile
+                        {isSameProfile ? 'Unlock Profile' : 'Switch Profile'}
                     </h2>
                     <button onClick={onClose} className="text-aida-text-muted hover:text-aida-dark">
                         <FiX className="w-5 h-5" />
@@ -44,15 +53,23 @@ const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
                 </div>
 
                 <div className="p-6 space-y-4">
-                    <p className="text-sm text-aida-text-muted">
-                        Switching to <strong className="text-aida-dark">{profile.name}</strong>
-                    </p>
+                    {isSameProfile ? (
+                        <p className="text-sm text-aida-text-muted">
+                            <strong className="text-aida-dark">{profile.name}</strong> is locked. Enter
+                            the password to continue syncing on this device.
+                        </p>
+                    ) : (
+                        <p className="text-sm text-aida-text-muted">
+                            Switching to <strong className="text-aida-dark">{profile.name}</strong>
+                        </p>
+                    )}
 
-                    {localOnlyWarning && (
+                    {switchingAwayFromLocal && (
                         <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
                             <FiAlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
                             <span>
-                                "{activeProfile.name}" is not synced. Its local data will be removed from this browser on switch.
+                                "{activeProfile.name}" is not synced. Its local data will be removed
+                                from this browser on switch.
                             </span>
                         </div>
                     )}
@@ -64,6 +81,7 @@ const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
                         placeholder="Password"
                         className="w-full px-3 py-2 border border-aida-border rounded-lg bg-aida-light text-aida-dark focus:ring-2 focus:ring-aida-pink focus:border-transparent"
                         onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                        autoFocus
                     />
 
                     {error && (
@@ -78,7 +96,11 @@ const ProfileUnlockModal = ({ isOpen, onClose, profile }) => {
                         disabled={!password || loading}
                         className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                     >
-                        {loading ? 'Switching...' : 'Unlock & Switch'}
+                        {loading
+                            ? 'Unlocking...'
+                            : isSameProfile
+                                ? 'Unlock'
+                                : 'Unlock & Switch'}
                     </button>
                 </div>
             </div>

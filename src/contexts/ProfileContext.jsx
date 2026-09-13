@@ -9,7 +9,6 @@ import {
     generateDEK, wrapDEK, makeVerifier, generateRecoveryKey,
     KDF_ALGO, KDF_ITERATIONS, bytesToB64,
 } from '../services/vaultCrypto';
-import { harvest, applySnapshot, clearLocalData } from '../services/snapshot';
 import { useAuth } from './AuthContext';
 
 const ProfileCtx = createContext(null);
@@ -20,6 +19,7 @@ export const useProfile = () => {
 };
 
 const ACTIVE_PROFILE_KEY = 'aida-active-profile';
+const PASSWORD_HANDOFF_KEY = 'aida-password-handoff';
 
 export const ProfileProvider = ({ children }) => {
     const { isAuthenticated, authLoading } = useAuth();
@@ -28,6 +28,9 @@ export const ProfileProvider = ({ children }) => {
     const [dek, setDek] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // A restored-but-not-unlocked profile is active but locked.
+    const locked = Boolean(activeProfile && !dek);
 
     // Load profiles from local DB and merge with server on login
     useEffect(() => {
@@ -44,14 +47,12 @@ export const ProfileProvider = ({ children }) => {
                             local.filter(p => p.serverProfileId).map(p => [p.serverProfileId, p])
                         );
 
-                        // Keep purely local profiles (no server id)
                         const result = local.filter(p => !p.serverProfileId);
                         const now = new Date().toISOString();
 
                         for (const sp of serverProfiles) {
                             const existing = localByServerId.get(sp.profileId);
                             if (existing) {
-                                // Update server-controlled fields, keep local bookkeeping
                                 result.push({
                                     ...existing,
                                     name: sp.name || existing.name,
@@ -62,7 +63,6 @@ export const ProfileProvider = ({ children }) => {
                                     updatedAt: sp.updatedAt || existing.updatedAt,
                                 });
                             } else {
-                                // Server profile not seen locally yet; create a local registry entry
                                 result.push({
                                     id: 'prof_local_' + crypto.randomUUID().replace(/-/g, ''),
                                     name: sp.name,
@@ -75,8 +75,10 @@ export const ProfileProvider = ({ children }) => {
                                     createdAt: sp.createdAt || now,
                                     updatedAt: sp.updatedAt || now,
                                     lastSyncedVersion: 0,
+                                    lastSyncedAt: null,
                                     lastSyncedConfig: {},
                                     lastSyncedChatIds: [],
+                                    lastSyncedCounts: { chats: 0, projects: 0 },
                                     tombstones: [],
                                     lastSyncSignature: null,
                                 });
@@ -84,7 +86,7 @@ export const ProfileProvider = ({ children }) => {
                         }
 
                         // Remove orphaned local-only profiles whose name is already
-                        // covered by a server-linked profile, then persist.
+                        // covered by a server-linked profile.
                         const serverNames = new Set(
                             result.filter(p => p.serverProfileId).map(p => p.name)
                         );
@@ -105,11 +107,52 @@ export const ProfileProvider = ({ children }) => {
                     }
                 }
 
+                // Cleanup: drop duplicate entries pointing at the same server profile.
+                // Older builds could accumulate these.
+                const seenServerIds = new Set();
+                const kept = [];
+                const dupeIds = [];
+                for (const p of merged) {
+                    if (p.serverProfileId) {
+                        if (seenServerIds.has(p.serverProfileId)) {
+                            dupeIds.push(p.id);
+                            continue;
+                        }
+                        seenServerIds.add(p.serverProfileId);
+                    }
+                    kept.push(p);
+                }
+                if (dupeIds.length) {
+                    await Promise.all(dupeIds.map(id => profilesDb.remove(id)));
+                    merged = kept;
+                }
+
                 setProfiles(merged);
                 const activeId = localStorage.getItem(ACTIVE_PROFILE_KEY);
                 if (activeId) {
                     const active = merged.find(p => p.id === activeId);
-                    if (active) setActiveProfile(active);
+                    if (active) {
+                        // If this page load is the result of a profile switch, the
+                        // password was handed off in sessionStorage. Use it to unlock
+                        // automatically, then discard it.
+                        const handoffJson = sessionStorage.getItem(PASSWORD_HANDOFF_KEY);
+                        if (handoffJson) {
+                            sessionStorage.removeItem(PASSWORD_HANDOFF_KEY);
+                            try {
+                                const { profileId, password } = JSON.parse(handoffJson);
+                                if (profileId === active.id) {
+                                    await unlockProfile(active.id, password);
+                                } else {
+                                    setActiveProfile(active);
+                                }
+                            } catch (e) {
+                                console.warn('[Profile] Auto-unlock failed, profile locked:', e);
+                                setActiveProfile(active);
+                            }
+                        } else {
+                            setActiveProfile(active);
+                        }
+                    }
                 }
             } catch (e) {
                 console.error('Failed to load profiles:', e);
@@ -119,6 +162,7 @@ export const ProfileProvider = ({ children }) => {
         };
 
         load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAuthenticated]);
 
     // Lock profile when user logs out
@@ -128,11 +172,27 @@ export const ProfileProvider = ({ children }) => {
         }
     }, [isAuthenticated, authLoading, activeProfile]);
 
+
+
     const refreshProfiles = useCallback(async () => {
         const local = await profilesDb.getAll();
         setProfiles(local);
         return local;
     }, []);
+
+    /**
+     * Writes bookkeeping into IndexedDB AND back into React state, so badges
+     * and signatures stay in sync with what is on disk.
+     */
+    const updateActiveProfile = useCallback(async (patch) => {
+        if (!activeProfile?.id) return null;
+        const latest = (await profilesDb.get(activeProfile.id)) || activeProfile;
+        const updated = { ...latest, ...patch, updatedAt: new Date().toISOString() };
+        await profilesDb.put(updated);
+        setProfiles(prev => prev.map(p => (p.id === updated.id ? updated : p)));
+        setActiveProfile(prev => (prev && prev.id === updated.id ? updated : prev));
+        return updated;
+    }, [activeProfile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const createProfile = useCallback(async ({ name, password, syncEnabled }) => {
         setError(null);
@@ -145,7 +205,6 @@ export const ProfileProvider = ({ children }) => {
             const recovery = await generateRecoveryKey();
             const wrappedDekRecovery = await wrapDEK(dekKey, recovery.key);
 
-            // Local id: client-side only, used for the local registry
             const localProfileId = 'prof_local_' + crypto.randomUUID().replace(/-/g, '');
             const now = new Date().toISOString();
 
@@ -161,14 +220,15 @@ export const ProfileProvider = ({ children }) => {
                 createdAt: now,
                 updatedAt: now,
                 lastSyncedVersion: 0,
+                lastSyncedAt: null,
                 lastSyncedConfig: {},
                 lastSyncedChatIds: [],
+                lastSyncedCounts: { chats: 0, projects: 0 },
                 tombstones: [],
                 lastSyncSignature: null,
             };
 
             if (syncEnabled) {
-                // Register on server. Server generates its own id.
                 const serverProfile = await vaultApi.createProfile({
                     name,
                     appId: 'aida',
@@ -189,17 +249,24 @@ export const ProfileProvider = ({ children }) => {
         }
     }, [refreshProfiles]);
 
+
+    /**
+     * Checks a password against a profile WITHOUT changing any state.
+     * The switch gate uses this so a wrong password can never destroy data.
+     */
+    const verifyProfilePassword = useCallback(async (profileId, password) => {
+        const record = await profilesDb.get(profileId);
+        if (!record) throw new Error('Profile not found');
+        const kek = await deriveKEK(password, record.kdf.salt, record.kdf.iterations);
+        const dekKey = await unwrapDEK(record.wrappedDek, kek);
+        if (!(await checkVerifier(dekKey, record.verifier))) throw new BadPasswordError();
+        return { record, dek: dekKey };
+    }, []);
+
     const unlockProfile = useCallback(async (profileId, password) => {
         setError(null);
         try {
-            const record = await profilesDb.get(profileId);
-            if (!record) throw new Error('Profile not found');
-
-            const kek = await deriveKEK(password, record.kdf.salt, record.kdf.iterations);
-            const dekKey = await unwrapDEK(record.wrappedDek, kek);
-            const ok = await checkVerifier(dekKey, record.verifier);
-            if (!ok) throw new BadPasswordError();
-
+            const { record, dek: dekKey } = await verifyProfilePassword(profileId, password);
             setDek(dekKey);
             setActiveProfile(record);
             localStorage.setItem(ACTIVE_PROFILE_KEY, profileId);
@@ -208,7 +275,7 @@ export const ProfileProvider = ({ children }) => {
             setError(e.message);
             throw e;
         }
-    }, []);
+    }, [verifyProfilePassword]);
 
     const lockProfile = useCallback(() => {
         setDek(null);
@@ -216,23 +283,27 @@ export const ProfileProvider = ({ children }) => {
         localStorage.removeItem(ACTIVE_PROFILE_KEY);
     }, []);
 
-    const switchProfile = useCallback(async (targetProfileId, password) => {
-        await clearLocalData();
-        await unlockProfile(targetProfileId, password);
-        window.location.reload();
-    }, [unlockProfile]);
+    /**
+    * Makes a profile the active one for the next page load, without unlocking it.
+    */
+    const selectProfile = useCallback((profileId) => {
+        localStorage.setItem(ACTIVE_PROFILE_KEY, profileId);
+    }, []);
 
     const value = {
         profiles,
         activeProfile,
         dek,
+        locked,
         loading,
         error,
         createProfile,
+        verifyProfilePassword,
         unlockProfile,
         lockProfile,
-        switchProfile,
+        selectProfile,
         refreshProfiles,
+        updateActiveProfile,
     };
 
     return <ProfileCtx.Provider value={value}>{children}</ProfileCtx.Provider>;
