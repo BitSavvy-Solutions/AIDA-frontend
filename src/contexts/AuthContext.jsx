@@ -3,21 +3,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { buildUrl, getRequestOptions } from '../config/apiConfig';
 
-// REMOVED: import userService from '../services/userService';
-// processLogin no longer needs userService. The new backend /auth/google
-// handles both user creation and token generation in one call.
-
 const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [apiToken, setApiToken] = useState(null);     // NEW: API token state
+    const [apiToken, setApiToken] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [authLoading, setAuthLoading] = useState(true);
 
     // Wipes all auth state from memory and localStorage in one go.
-    // Called on logout and on failed login to prevent partial state.
     const clearAuthState = useCallback(() => {
         setUser(null);
         setApiToken(null);
@@ -25,11 +20,9 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('aidaUser');
         localStorage.removeItem('aidaToken');
         localStorage.removeItem('aidaTokenExpiry');
+        localStorage.removeItem('aida-active-profile'); // ADDED: clear active profile on logout
     }, []);
 
-    // CHANGED: processLogin now accepts a Google ID token string (credential)
-    // from the GoogleLogin component, not a googleData object.
-    // It calls POST /auth/google which returns a secure aitut_sk_ API token.
     const processLogin = useCallback(async (credential) => {
         setAuthLoading(true);
         try {
@@ -60,7 +53,6 @@ export const AuthProvider = ({ children }) => {
             setApiToken(data.token);
             setIsAuthenticated(true);
 
-            // Store all three pieces so we can restore and validate the session on refresh
             localStorage.setItem('aidaUser', JSON.stringify(finalUser));
             localStorage.setItem('aidaToken', data.token);
             localStorage.setItem('aidaTokenExpiry', data.expiresAt);
@@ -75,20 +67,12 @@ export const AuthProvider = ({ children }) => {
         }
     }, [clearAuthState]);
 
-    // CHANGED: logout is now synchronous from the UI's perspective.
-    // It clears local state immediately (instant UI response) and then
-    // fires the backend deactivation call as fire-and-forget.
-    // This means Header.jsx can call logout(); navigate('/'); without awaiting.
     const logout = useCallback(() => {
-        // Capture token BEFORE clearing storage, because we need it for the backend call
         const tokenToDeactivate = localStorage.getItem('aidaToken');
 
-        // Clear local state first so the UI responds immediately
         clearAuthState();
         console.log('🚪 User logged out.');
 
-        // Notify backend asynchronously - best effort, non-critical
-        // If this fails, the token expires naturally in 7 days anyway
         if (tokenToDeactivate) {
             const url = buildUrl('/auth/logout');
             const options = getRequestOptions();
@@ -102,10 +86,6 @@ export const AuthProvider = ({ children }) => {
         }
     }, [clearAuthState]);
 
-    // CHANGED: On app load, we now restore THREE things (user, token, expiry)
-    // and proactively check if the token has expired BEFORE the user does anything.
-    // If expired, we clear the session silently. The user sees the login button,
-    // not a 401 error mid-conversation.
     useEffect(() => {
         try {
             const storedUser = localStorage.getItem('aidaUser');
@@ -116,11 +96,9 @@ export const AuthProvider = ({ children }) => {
                 const expiresAt = new Date(storedExpiry);
 
                 if (new Date() >= expiresAt) {
-                    // Token is expired, clear everything before user interacts
                     console.log('🔒 Stored token has expired. Clearing session silently.');
                     clearAuthState();
                 } else {
-                    // Token is still valid, restore the full session
                     const parsedUser = JSON.parse(storedUser);
                     setUser(parsedUser);
                     setApiToken(storedToken);
@@ -138,7 +116,7 @@ export const AuthProvider = ({ children }) => {
 
     const value = {
         user,
-        apiToken,           // NEW: exposed so AidaWidget and other components can use it
+        apiToken,
         isAuthenticated,
         authLoading,
         processLogin,

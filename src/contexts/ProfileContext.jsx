@@ -10,6 +10,7 @@ import {
     KDF_ALGO, KDF_ITERATIONS, bytesToB64,
 } from '../services/vaultCrypto';
 import { harvest, applySnapshot } from '../services/snapshot';
+import { useAuth } from './AuthContext';
 
 const ProfileCtx = createContext(null);
 export const useProfile = () => {
@@ -21,21 +22,78 @@ export const useProfile = () => {
 const ACTIVE_PROFILE_KEY = 'aida-active-profile';
 
 export const ProfileProvider = ({ children }) => {
+    const { isAuthenticated, authLoading } = useAuth();
     const [profiles, setProfiles] = useState([]);
     const [activeProfile, setActiveProfile] = useState(null);
     const [dek, setDek] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // Load profiles from local DB on mount
+    // Load profiles from local DB and merge with server on login
     useEffect(() => {
         const load = async () => {
             try {
+                setLoading(true);
                 const local = await profilesDb.getAll();
-                setProfiles(local);
+                let merged = local;
+
+                if (isAuthenticated) {
+                    try {
+                        const serverProfiles = await vaultApi.listProfiles();
+                        const localByServerId = new Map(
+                            local.filter(p => p.serverProfileId).map(p => [p.serverProfileId, p])
+                        );
+
+                        // Keep purely local profiles (no server id)
+                        const result = local.filter(p => !p.serverProfileId);
+                        const now = new Date().toISOString();
+
+                        for (const sp of serverProfiles) {
+                            const existing = localByServerId.get(sp.profileId);
+                            if (existing) {
+                                // Update server-controlled fields, keep local bookkeeping
+                                result.push({
+                                    ...existing,
+                                    name: sp.name || existing.name,
+                                    kdf: sp.kdf || existing.kdf,
+                                    wrappedDek: sp.wrappedDek || existing.wrappedDek,
+                                    wrappedDekRecovery: sp.wrappedDekRecovery || existing.wrappedDekRecovery,
+                                    verifier: sp.verifier || existing.verifier,
+                                    updatedAt: sp.updatedAt || existing.updatedAt,
+                                });
+                            } else {
+                                // Server profile not seen locally yet; create a local registry entry
+                                result.push({
+                                    id: 'prof_local_' + crypto.randomUUID().replace(/-/g, ''),
+                                    name: sp.name,
+                                    serverProfileId: sp.profileId,
+                                    syncEnabled: true,
+                                    kdf: sp.kdf,
+                                    wrappedDek: sp.wrappedDek,
+                                    wrappedDekRecovery: sp.wrappedDekRecovery,
+                                    verifier: sp.verifier,
+                                    createdAt: sp.createdAt || now,
+                                    updatedAt: sp.updatedAt || now,
+                                    lastSyncedVersion: 0,
+                                    lastSyncedConfig: {},
+                                    lastSyncedChatIds: [],
+                                    tombstones: [],
+                                    lastSyncSignature: null,
+                                });
+                            }
+                        }
+
+                        await Promise.all(result.map(p => profilesDb.put(p)));
+                        merged = await profilesDb.getAll();
+                    } catch (e) {
+                        console.error('Failed to sync profiles from server:', e);
+                    }
+                }
+
+                setProfiles(merged);
                 const activeId = localStorage.getItem(ACTIVE_PROFILE_KEY);
                 if (activeId) {
-                    const active = local.find(p => p.id === activeId);
+                    const active = merged.find(p => p.id === activeId);
                     if (active) setActiveProfile(active);
                 }
             } catch (e) {
@@ -44,8 +102,16 @@ export const ProfileProvider = ({ children }) => {
                 setLoading(false);
             }
         };
+
         load();
-    }, []);
+    }, [isAuthenticated]);
+
+    // Lock profile when user logs out
+    useEffect(() => {
+        if (!authLoading && !isAuthenticated && activeProfile) {
+            lockProfile();
+        }
+    }, [isAuthenticated, authLoading, activeProfile]);
 
     const refreshProfiles = useCallback(async () => {
         const local = await profilesDb.getAll();
@@ -90,7 +156,7 @@ export const ProfileProvider = ({ children }) => {
                 // Register on server. Server generates its own id.
                 const serverProfile = await vaultApi.createProfile({
                     name,
-                    appId: 'fractant',
+                    appId: 'AIDA', // Fixed: was 'fractant'
                     kdf: record.kdf,
                     wrappedDek,
                     wrappedDekRecovery,
