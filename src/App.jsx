@@ -5,9 +5,8 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 
 import { googleConfig } from './config/authConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ProfileProvider } from './contexts/ProfileContext';
-import { ProfileSyncProvider } from './contexts/ProfileSyncContext';
-import { ProfileLauncherProvider } from './contexts/ProfileLauncherContext';
+import { VaultProvider } from './contexts/VaultContext';
+import { SyncProvider } from './contexts/SyncContext';
 
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -22,35 +21,33 @@ const AppContent = () => {
     const { isAuthenticated, authLoading } = useAuth();
 
     return (
-        <ProfileLauncherProvider isAuthenticated={isAuthenticated}>
-            <Router>
-                <>
-                    <Routes>
-                        <Route path="/draw" element={<DrawPage />} />
-                        <Route path="/*" element={
-                            <div className="min-h-screen flex flex-col bg-aida-light">
-                                <Header />
-                                <main className="flex-grow">
-                                    <Routes>
-                                        <Route path="/"        element={<HomePage />} />
-                                        <Route path="/login"   element={<LoginPage />} />
-                                        <Route path="/source"  element={<SourcePage />} />
-                                        <Route path="/account" element={<Account />} />
-                                        <Route path="*"        element={<Navigate to="/" replace />} />
-                                    </Routes>
-                                </main>
-                                <Footer />
-                            </div>
-                        } />
-                    </Routes>
+        <Router>
+            <>
+                <Routes>
+                    <Route path="/draw" element={<DrawPage />} />
+                    <Route path="/*" element={
+                        <div className="min-h-screen flex flex-col bg-aida-light">
+                            <Header />
+                            <main className="flex-grow">
+                                <Routes>
+                                    <Route path="/"        element={<HomePage />} />
+                                    <Route path="/login"   element={<LoginPage />} />
+                                    <Route path="/source"  element={<SourcePage />} />
+                                    <Route path="/account" element={<Account />} />
+                                    <Route path="*"        element={<Navigate to="/" replace />} />
+                                </Routes>
+                            </main>
+                            <Footer />
+                        </div>
+                    } />
+                </Routes>
 
-                    <div id="aida-global-widget-container" className="fixed bottom-5 right-5 z-[1000]" />
-                    {!authLoading && (
-                        <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
-                    )}
-                </>
-            </Router>
-        </ProfileLauncherProvider>
+                <div id="aida-global-widget-container" className="fixed bottom-5 right-5 z-[1000]" />
+                {!authLoading && (
+                    <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
+                )}
+            </>
+        </Router>
     );
 };
 
@@ -58,11 +55,11 @@ function App() {
     return (
         <GoogleOAuthProvider clientId={googleConfig.clientId}>
             <AuthProvider>
-                <ProfileProvider>
-                    <ProfileSyncProvider>
+                <VaultProvider>
+                    <SyncProvider>
                         <AppContent />
-                    </ProfileSyncProvider>
-                </ProfileProvider>
+                    </SyncProvider>
+                </VaultProvider>
             </AuthProvider>
         </GoogleOAuthProvider>
     );

@@ -13,7 +13,7 @@ const config = {
 
     // NEW: Encrypted vault service
     VAULT_URL: isDevelopment
-        ? 'http://localhost:8080/api/vault'
+        ? 'https://ethivault-dev.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api/vault'
         : 'https://vault.iverse.space/api/vault',
 
     FRONTEND_URL: isDevelopment

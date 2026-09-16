@@ -7,7 +7,7 @@ import { FiLogOut, FiLogIn, FiPlus, FiLoader, FiStar, FiMenu, FiX, FiUser, FiHom
 import { HiSparkles } from 'react-icons/hi2';
 import creditService from '../services/creditService';
 import BuyCreditsModal from './BuyCreditsModal';
-import ProfileSwitcher from './ProfileSwitcher';
+import SyncStatusButton from './SyncStatusButton';
 
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
@@ -151,7 +151,7 @@ const Header = () => {
                                             </div>
 
                                             <div className="hidden sm:flex">
-                                                <ProfileSwitcher />
+                                                <SyncStatusButton />
                                             </div>
 
 
@@ -325,7 +325,7 @@ const Header = () => {
                                     </div>
 
                                     <div className="px-5 mt-4 mb-2">
-                                        <ProfileSwitcher />
+                                        <SyncStatusButton />
                                     </div>
 
                                     <div className="px-2 mt-3 space-y-1">

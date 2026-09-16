@@ -56,9 +56,9 @@ const readManagedLocalStorage = () => {
     return out;
 };
 
-export const harvest = async (profileRecord, { assumeCleared = false } = {}) => {
+export const harvest = async (vaultRecord) => {
     const now = nowIso();
-    const prevConfig = profileRecord.lastSyncedConfig || {};
+    const prevConfig = vaultRecord.lastSyncedConfig || {};
     const currentConfig = readManagedLocalStorage();
 
     const config = {};
@@ -67,28 +67,20 @@ export const harvest = async (profileRecord, { assumeCleared = false } = {}) => 
             ? { v, t: prevConfig[key].t }
             : { v, t: now };
     }
-    // A workspace cleared for a profile switch is NOT a mass deletion.
-    // Only record deletions when local state genuinely represents the profile.
-    if (!assumeCleared) {
-        for (const key of Object.keys(prevConfig)) {
-            if (!(key in currentConfig) && prevConfig[key].v !== null) {
-                config[key] = { v: null, t: now };
-            }
+    for (const key of Object.keys(prevConfig)) {
+        if (!(key in currentConfig) && prevConfig[key].v !== null) {
+            config[key] = { v: null, t: now };
         }
     }
 
     const [chats, projects] = await Promise.all([db.chats.toArray(), db.projects.toArray()]);
 
-    const tombMap = new Map((profileRecord.tombstones || []).map(t => [`${t.kind}:${t.id}`, t]));
+    const tombMap = new Map((vaultRecord.tombstones || []).map(t => [`${t.kind}:${t.id}`, t]));
     const currentChatIds = new Set(chats.map(c => c.id));
-    // Same rule for chats: after a switch every chat is "missing", and
-    // fabricating tombstones here would delete the server copies on merge.
-    if (!assumeCleared) {
-        for (const id of profileRecord.lastSyncedChatIds || []) {
-            if (!currentChatIds.has(id)) {
-                const k = `chat:${id}`;
-                if (!tombMap.has(k)) tombMap.set(k, { id, kind: 'chat', deletedAt: now });
-            }
+    for (const id of vaultRecord.lastSyncedChatIds || []) {
+        if (!currentChatIds.has(id)) {
+            const k = `chat:${id}`;
+            if (!tombMap.has(k)) tombMap.set(k, { id, kind: 'chat', deletedAt: now });
         }
     }
     const cutoff = Date.now() - TOMBSTONE_TTL_MS;
@@ -102,7 +94,7 @@ export const harvest = async (profileRecord, { assumeCleared = false } = {}) => 
 
     return {
         schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-        profileId: profileRecord.id,
+        profileId: vaultRecord.id,
         exportedAt: now,
         config,
         session,

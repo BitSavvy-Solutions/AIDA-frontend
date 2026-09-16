@@ -51,14 +51,14 @@ export class BadPasswordError extends Error {
     constructor() { super('Incorrect password'); this.name = 'BadPasswordError'; }
 }
 
-export const unwrapDEK = async (wrappedB64, kek) => {
+export const unwrapDEK = async (wrappedB64, kek, { extractable = false } = {}) => {
     const raw = b64ToBytes(wrappedB64);
     const iv = raw.slice(0, 12);
     const data = raw.slice(12);
     try {
         return await crypto.subtle.unwrapKey(
             'raw', data, kek, { name: 'AES-GCM', iv },
-            { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+            { name: 'AES-GCM', length: 256 }, extractable, ['encrypt', 'decrypt']
         );
     } catch {
         throw new BadPasswordError();
