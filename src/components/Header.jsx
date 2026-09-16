@@ -1,5 +1,6 @@
 // src/components/Header.jsx
 import React, { useEffect, useState, useRef, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Disclosure, Menu, Transition } from '@headlessui/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,18 +8,21 @@ import { FiLogOut, FiLogIn, FiPlus, FiLoader, FiStar, FiMenu, FiX, FiUser, FiHom
 import { HiSparkles } from 'react-icons/hi2';
 import creditService from '../services/creditService';
 import BuyCreditsModal from './BuyCreditsModal';
+import SyncStatusButton from './SyncStatusButton';
+import { useVault } from '../contexts/VaultContext';
+import SignOutModal from './SignOutModal';
 
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
+    const { vault } = useVault();
+    const [signOutOpen, setSignOutOpen] = useState(false);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
-    // --- THEME STATE ---
     const [theme, setTheme] = useState(() => {
         return localStorage.getItem('aida_theme') || 'light';
     });
 
-    // Apply theme globally to the <html> tag
     useEffect(() => {
         const root = document.documentElement;
         if (theme === 'dark') {
@@ -28,7 +32,6 @@ const Header = () => {
         }
         localStorage.setItem('aida_theme', theme);
     }, [theme]);
-    // -------------------
 
     const [balance, setBalance] = useState(() => {
         const stored = localStorage.getItem('aida_pre_payment_balance');
@@ -76,7 +79,7 @@ const Header = () => {
                             title: 'Payment Successful!',
                             message: `Your new balance is $${newBalance.toFixed(2)}`
                         });
-                        
+
                         localStorage.removeItem('aida_pre_payment_balance');
                         navigate('/', { replace: true });
 
@@ -107,6 +110,11 @@ const Header = () => {
     };
 
     const handleLogout = () => {
+        // With encrypted sync set up, ask what to do with local chats first.
+        if (vault) {
+            setSignOutOpen(true);
+            return;
+        }
         logout();
         navigate('/');
     };
@@ -128,11 +136,10 @@ const Header = () => {
                                     <HiSparkles className="w-8 h-8 text-aida-pink animate-pulse" />
                                     <span className="text-2xl font-bold text-aida-dark dark:text-white">AIDA</span>
                                 </Link>
-                                
+
                                 <div className="flex items-center space-x-4">
                                     {isAuthenticated && user ? (
                                         <div className="flex items-center space-x-3">
-                                            {/* Balance Pill */}
                                             <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full px-3 py-1 border border-gray-200 dark:border-gray-700">
                                                 {isPolling && (
                                                     <FiLoader className="animate-spin text-pink-500 mr-2" title="Updating balance..." />
@@ -140,7 +147,7 @@ const Header = () => {
                                                 <span className={`text-sm font-bold mr-2 ${getBalanceColor(balance)}`}>
                                                     ${typeof balance === 'number' ? balance.toFixed(2) : '0.00'}
                                                 </span>
-                                                <button 
+                                                <button
                                                     onClick={() => setIsModalOpen(true)}
                                                     className="bg-aida-pink hover:bg-pink-600 text-white rounded-full p-1 transition-colors"
                                                     title="Add Credits"
@@ -149,7 +156,10 @@ const Header = () => {
                                                 </button>
                                             </div>
 
-                                            {/* Desktop Profile Dropdown */}
+                                            <div className="hidden sm:flex">
+                                                <SyncStatusButton />
+                                            </div>
+
                                             <div className="hidden sm:block">
                                                 <Menu as="div" className="relative ml-3">
                                                     <div>
@@ -180,26 +190,23 @@ const Header = () => {
                                                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email || 'User Account'}</p>
                                                             </div>
 
-                                                            {/* THEME TOGGLE (Desktop) */}
                                                             <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/50">
                                                                 <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('light'); }}
-                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${
-                                                                            theme === 'light' 
-                                                                            ? 'bg-white text-gray-900 shadow-sm' 
+                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'light'
+                                                                            ? 'bg-white text-gray-900 shadow-sm'
                                                                             : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         <FiSun className="w-4 h-4" />
                                                                     </button>
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('dark'); }}
-                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${
-                                                                            theme === 'dark' 
-                                                                            ? 'bg-[#1e293b] text-white shadow-sm' 
+                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'dark'
+                                                                            ? 'bg-[#1e293b] text-white shadow-sm'
                                                                             : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         <FiMoon className="w-4 h-4" />
                                                                     </button>
@@ -241,7 +248,6 @@ const Header = () => {
                                                 </Menu>
                                             </div>
 
-                                            {/* Mobile Menu Button */}
                                             <div className="flex sm:hidden">
                                                 <Disclosure.Button className="inline-flex items-center justify-center p-2 text-gray-400 rounded-md hover:text-aida-pink hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-aida-pink">
                                                     <span className="sr-only">Open main menu</span>
@@ -258,7 +264,7 @@ const Header = () => {
                                             to="/login"
                                             className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-aida-pink rounded-lg hover:opacity-90 transition-opacity"
                                         >
-                                            <FiLogIn className="mr-2 h-4 w-4"/>
+                                            <FiLogIn className="mr-2 h-4 w-4" />
                                             Join Beta
                                         </Link>
                                     )}
@@ -266,17 +272,15 @@ const Header = () => {
                             </div>
                         </div>
 
-                        {/* Invisible overlay to detect clicks outside the mobile menu */}
                         {open && (
-                            <button 
+                            <button
                                 type="button"
-                                className="fixed inset-0 top-16 z-40 w-full h-full bg-transparent cursor-default sm:hidden" 
-                                onClick={() => close()} 
+                                className="fixed inset-0 top-16 z-40 w-full h-full bg-transparent cursor-default sm:hidden"
+                                onClick={() => close()}
                                 tabIndex={-1}
                             />
                         )}
 
-                        {/* Mobile Navigation Panel */}
                         <Disclosure.Panel className="sm:hidden bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-gray-800 shadow-lg absolute w-full z-50">
                             {isAuthenticated && user && (
                                 <div className="pt-4 pb-3 border-t border-gray-200">
@@ -296,30 +300,31 @@ const Header = () => {
                                         </div>
                                     </div>
 
-                                    {/* THEME TOGGLE (Mobile) */}
                                     <div className="px-5 mb-4">
                                         <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                             <button
                                                 onClick={() => setTheme('light')}
-                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${
-                                                    theme === 'light' 
-                                                    ? 'bg-white text-gray-900 shadow-sm' 
+                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'light'
+                                                    ? 'bg-white text-gray-900 shadow-sm'
                                                     : 'text-gray-500 dark:text-gray-400'
-                                                }`}
+                                                    }`}
                                             >
                                                 <FiSun className="w-5 h-5 mr-2" /> Light
                                             </button>
                                             <button
                                                 onClick={() => setTheme('dark')}
-                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${
-                                                    theme === 'dark' 
-                                                    ? 'bg-[#1e293b] text-white shadow-sm' 
+                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'dark'
+                                                    ? 'bg-[#1e293b] text-white shadow-sm'
                                                     : 'text-gray-500 dark:text-gray-400'
-                                                }`}
+                                                    }`}
                                             >
                                                 <FiMoon className="w-5 h-5 mr-2" /> Dark
                                             </button>
                                         </div>
+                                    </div>
+
+                                    <div className="px-5 mt-4 mb-2">
+                                        <SyncStatusButton />
                                     </div>
 
                                     <div className="px-2 mt-3 space-y-1">
@@ -352,23 +357,26 @@ const Header = () => {
                 )}
             </Disclosure>
 
-            <BuyCreditsModal 
-                userId={user?.id} 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
+            <BuyCreditsModal
+                userId={user?.id}
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
                 currentBalance={balance}
             />
+            <SignOutModal
+                isOpen={signOutOpen}
+                onClose={() => setSignOutOpen(false)}
+                onSignedOut={() => navigate('/')}
+            />
 
-            {notification && (
-                <div className="fixed bottom-6 left-6 z-[3000] animate-slide-up">
-                    <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${
-                        notification.type === 'processing' 
-                            ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' 
-                            : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
-                    }`}>
-                        <div className={`p-2 rounded-full ${
-                            notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
+            {notification && createPortal(
+                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm animate-slide-up">
+                    <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${notification.type === 'processing'
+                        ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                        : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
                         }`}>
+                        <div className={`p-2 rounded-full ${notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
+                            }`}>
                             {notification.type === 'processing' ? (
                                 <FiLoader className="w-6 h-6 text-blue-500 animate-spin" />
                             ) : (
@@ -377,9 +385,8 @@ const Header = () => {
                         </div>
 
                         <div>
-                            <h4 className={`text-sm font-bold ${
-                                notification.type === 'processing' ? 'text-gray-900 dark:text-white' : 'text-green-800 dark:text-green-200'
-                            }`}>
+                            <h4 className={`text-sm font-bold ${notification.type === 'processing' ? 'text-gray-900 dark:text-white' : 'text-green-800 dark:text-green-200'
+                                }`}>
                                 {notification.title}
                             </h4>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -387,7 +394,7 @@ const Header = () => {
                             </p>
                         </div>
 
-                        <button 
+                        <button
                             onClick={() => setNotification(null)}
                             className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                         >
@@ -397,7 +404,8 @@ const Header = () => {
                             </svg>
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
