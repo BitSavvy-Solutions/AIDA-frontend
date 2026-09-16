@@ -7,6 +7,7 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
     const { unlock } = useVault();
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [remember, setRemember] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -16,7 +17,7 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
         setLoading(true);
         setError('');
         try {
-            await unlock(password);
+            await unlock(password, { rememberDevice: remember });
             setPassword('');
             onClose();
         } catch (e) {
@@ -67,6 +68,16 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
                             {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
                         </button>
                     </div>
+
+                    <label className="flex items-center gap-2 text-sm text-aida-text-muted cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={remember}
+                            onChange={(e) => setRemember(e.target.checked)}
+                            className="w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
+                        />
+                        Stay unlocked on this device
+                    </label>
 
                     {error && (
                         <div className="flex items-center gap-2 text-sm text-red-500">

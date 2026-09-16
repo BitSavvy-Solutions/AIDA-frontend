@@ -2,11 +2,11 @@
  * Manages the single encrypted-sync vault: setup, lock state, password ops.
  */
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { vaultDb } from '../services/vaultDb';
+import { vaultDb, deviceKeyStore } from '../services/vaultDb';
 import { vaultApi } from '../services/vaultApi';
 import {
-    deriveKEK, unwrapDEK, checkVerifier, BadPasswordError,
-    generateDEK, wrapDEK, makeVerifier, generateRecoveryKey,
+    deriveKEK, unwrapDEK, wrapDEK, checkVerifier, BadPasswordError,
+    generateDEK, makeVerifier, generateRecoveryKey,
     recoveryKeyFromDisplay, KDF_ALGO, KDF_ITERATIONS, bytesToB64,
 } from '../services/vaultCrypto';
 import { useAuth } from './AuthContext';
@@ -29,6 +29,7 @@ const buildRecordFromServer = (sp) => ({
     wrappedDek: sp.wrappedDek,
     wrappedDekRecovery: sp.wrappedDekRecovery,
     verifier: sp.verifier,
+    deviceWrappedDek: null,
     createdAt: sp.createdAt || nowIso(),
     updatedAt: sp.updatedAt || nowIso(),
     lastSyncedVersion: 0,
@@ -55,13 +56,40 @@ export const VaultProvider = ({ children }) => {
         setNoticeState(msg || null);
     }, []);
 
-    const unlockWithRecord = useCallback(async (record, password) => {
+    const updateVault = useCallback(async (patch) => {
+        const latest = (await vaultDb.get()) || vault;
+        if (!latest) return null;
+        const updated = { ...latest, ...patch, updatedAt: nowIso() };
+        await vaultDb.put(updated);
+        setVault(updated);
+        return updated;
+    }, [vault]);
+
+    // Wrap the DEK with the non-extractable device key and store the blob on
+    // the vault record, so this browser can unlock without the password.
+    const persistDeviceUnlock = useCallback(async (extractableDek) => {
+        const deviceKey = await deviceKeyStore.getOrCreate();
+        const deviceWrappedDek = await wrapDEK(extractableDek, deviceKey);
+        await updateVault({ deviceWrappedDek });
+    }, [updateVault]);
+
+    const unlockWithRecord = useCallback(async (record, password, { rememberDevice = true } = {}) => {
         const kek = await deriveKEK(password, record.kdf.salt, record.kdf.iterations);
         const dekKey = await unwrapDEK(record.wrappedDek, kek);
         if (!(await checkVerifier(dekKey, record.verifier))) throw new BadPasswordError();
         setDek(dekKey);
+        if (rememberDevice) {
+            try {
+                // wrapKey needs an extractable copy. The in-memory DEK above
+                // stays non-extractable.
+                const extractableDek = await unwrapDEK(record.wrappedDek, kek, { extractable: true });
+                await persistDeviceUnlock(extractableDek);
+            } catch (e) {
+                console.error('[Vault] Could not persist device unlock:', e);
+            }
+        }
         return dekKey;
-    }, []);
+    }, [persistDeviceUnlock]);
 
     useEffect(() => {
         if (authLoading) return;
@@ -76,8 +104,6 @@ export const VaultProvider = ({ children }) => {
             try {
                 let record = await vaultDb.get();
                 if (!record) {
-                    // No local record. Adopt the server vault if one exists,
-                    // for example when the user logs in on a new device.
                     try {
                         const list = await vaultApi.listProfiles();
                         const sp = (list || [])[0];
@@ -89,8 +115,6 @@ export const VaultProvider = ({ children }) => {
                         console.error('[Vault] Failed to check server vault:', e);
                     }
                 } else if (record.serverVaultId) {
-                    // Refresh key material from the server so a password change
-                    // made on another device keeps working here.
                     try {
                         const list = await vaultApi.listProfiles();
                         const sp = (list || []).find(p => p.profileId === record.serverVaultId);
@@ -109,6 +133,27 @@ export const VaultProvider = ({ children }) => {
                         console.error('[Vault] Failed to refresh vault from server:', e);
                     }
                 }
+
+                // Silent unlock: if this device previously wrapped the DEK
+                // with its device key, unlock without asking for a password.
+                if (record?.deviceWrappedDek) {
+                    try {
+                        const deviceKey = await deviceKeyStore.get();
+                        if (!deviceKey) throw new Error('Device key missing');
+                        const dekKey = await unwrapDEK(record.deviceWrappedDek, deviceKey);
+                        if (!(await checkVerifier(dekKey, record.verifier))) {
+                            throw new Error('Verifier mismatch');
+                        }
+                        setDek(dekKey);
+                    } catch {
+                        // Device key gone or blob is stale. Clear it so the
+                        // password prompt shows instead.
+                        const cleaned = { ...record, deviceWrappedDek: null };
+                        await vaultDb.put(cleaned);
+                        record = cleaned;
+                    }
+                }
+
                 setVault(record || null);
             } catch (e) {
                 console.error('[Vault] Failed to load vault:', e);
@@ -120,17 +165,9 @@ export const VaultProvider = ({ children }) => {
         load();
     }, [isAuthenticated, authLoading]);
 
-    const updateVault = useCallback(async (patch) => {
-        const latest = (await vaultDb.get()) || vault;
-        if (!latest) return null;
-        const updated = { ...latest, ...patch, updatedAt: nowIso() };
-        await vaultDb.put(updated);
-        setVault(updated);
-        return updated;
-    }, [vault]);
-
     const removeVault = useCallback(async () => {
         await vaultDb.remove();
+        await deviceKeyStore.remove();
         setVault(null);
         setDek(null);
     }, []);
@@ -153,6 +190,7 @@ export const VaultProvider = ({ children }) => {
             wrappedDek,
             wrappedDekRecovery,
             verifier,
+            deviceWrappedDek: null,
             createdAt: now,
             updatedAt: now,
             lastSyncedVersion: 0,
@@ -176,8 +214,6 @@ export const VaultProvider = ({ children }) => {
             record.serverVaultId = sp.profileId;
         } catch (e) {
             if (e.status === 409) {
-                // The account already has a vault. Adopt it instead of the
-                // keys we just generated, then try the entered password.
                 const list = await vaultApi.listProfiles();
                 const sp = (list || [])[0];
                 if (!sp) throw new Error('A vault already exists but could not be loaded.');
@@ -197,18 +233,35 @@ export const VaultProvider = ({ children }) => {
         await vaultDb.put(record);
         setVault(record);
         setDek(dekKey);
+        try {
+            // dekKey from generateDEK() is extractable, so it can be wrapped
+            // for this device immediately.
+            await persistDeviceUnlock(dekKey);
+        } catch (e) {
+            console.error('[Vault] Could not persist device unlock:', e);
+        }
         return { recoveryKey: recovery.display };
-    }, [unlockWithRecord]);
+    }, [unlockWithRecord, persistDeviceUnlock]);
 
-    const unlock = useCallback(async (password) => {
+    const unlock = useCallback(async (password, opts) => {
         const record = await vaultDb.get();
         if (!record) throw new Error('Encrypted sync is not set up on this device.');
-        await unlockWithRecord(record, password);
-        setVault(record);
+        await unlockWithRecord(record, password, opts);
+        setVault(await vaultDb.get());
     }, [unlockWithRecord]);
 
-    const lock = useCallback(() => setDek(null), []);
+    const lock = useCallback(async () => {
+        setDek(null);
+        // Forget the device-wrapped DEK too, otherwise the next page load
+        // would silently unlock again and Lock would mean nothing.
+        const record = await vaultDb.get();
+        if (record?.deviceWrappedDek) {
+            await updateVault({ deviceWrappedDek: null });
+        }
+    }, [updateVault]);
 
+    // Note: changePassword and resetWithRecovery re-wrap the SAME DEK under a
+    // new KEK. The device-wrapped DEK stays valid, so no changes needed there.
     const changePassword = useCallback(async (currentPassword, newPassword) => {
         const record = await vaultDb.get();
         if (!record?.serverVaultId) throw new Error('Encrypted sync is not set up.');
@@ -260,8 +313,6 @@ export const VaultProvider = ({ children }) => {
         setDek(newDek);
     }, [updateVault]);
 
-    // Last resort when both password and recovery key are lost. Deletes the
-    // server backup only. Local data on this device is never touched.
     const resetBackup = useCallback(async () => {
         const record = await vaultDb.get();
         if (record?.serverVaultId) {
