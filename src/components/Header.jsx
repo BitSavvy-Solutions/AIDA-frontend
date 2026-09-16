@@ -130,6 +130,12 @@ const Header = () => {
                                 </Link>
                                 
                                 <div className="flex items-center space-x-4">
+                                    <Link
+                                        to="/build-a-chatbot"
+                                        className="hidden sm:inline-flex items-center px-4 py-2 text-sm font-medium text-aida-pink border border-aida-pink/30 rounded-lg hover:bg-aida-pink/10 transition-colors"
+                                    >
+                                        Build a Chatbot
+                                    </Link>
                                     {isAuthenticated && user ? (
                                         <div className="flex items-center space-x-3">
                                             {/* Balance Pill */}

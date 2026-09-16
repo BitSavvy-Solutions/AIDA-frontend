@@ -14,6 +14,7 @@ import SourcePage from './pages/SourcePage';
 import DrawPage from './pages/DrawPage';
 import AidaWidget from './components/AidaWidget';
 import Account from './pages/Account';
+import BuildChatbotPage from './pages/BuildChatbotPage';
 
 /**
  * AppContent uses hooks from providers that wrap it, and owns the
@@ -40,6 +41,7 @@ const AppContent = () => {
                                     <Route path="/login"  element={<LoginPage />} />
                                     <Route path="/source" element={<SourcePage />} />
                                     <Route path="/account" element={<Account />} />
+                                    <Route path="/build-a-chatbot" element={<BuildChatbotPage />} />
                                     <Route path="*"       element={<Navigate to="/" replace />} />
                                 </Routes>
                             </main>

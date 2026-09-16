@@ -703,6 +703,29 @@ const HomePage = () => {
                 </div>
             </section>
 
+            {/* CUSTOM CHATBOT SERVICES */}
+            <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20 text-center">
+                <div className="max-w-3xl mx-auto p-10 rounded-2xl border border-aida-pink/20 bg-aida-card relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-rose-500/5 pointer-events-none" />
+                    <div className="relative z-10">
+                        <h2 className="text-3xl font-bold text-aida-dark">
+                            Need a chatbot for your business?
+                        </h2>
+                        <p className="mt-3 text-aida-text-muted max-w-xl mx-auto">
+                            We're the team behind AIDA. We design and build custom chatbots
+                            for companies, tailored to your product and your customers.
+                        </p>
+                        <button
+                            onClick={() => navigate('/build-a-chatbot')}
+                            className="mt-8 inline-flex items-center px-8 py-4 bg-aida-pink text-white font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform text-lg"
+                        >
+                            <FiMessageSquare className="w-5 h-5 mr-2" />
+                            Build a chatbot for your company
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             {/* FINAL CTA STRIP */}
             <section className="bg-aida-card border-t border-aida-border">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
