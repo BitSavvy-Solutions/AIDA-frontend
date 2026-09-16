@@ -1,4 +1,6 @@
+// src/components/SyncStatusButton.jsx
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     FiGlobe, FiLock, FiRefreshCw, FiCheck, FiAlertCircle,
     FiChevronDown, FiKey, FiX, FiHardDrive,
@@ -38,7 +40,6 @@ const SyncStatusButton = () => {
     const [usage, setUsage] = useState(null);
     const menuRef = useRef(null);
 
-    // Prompt for unlock once per page load when the vault is locked.
     useEffect(() => {
         if (!loading && vault && !dek) setUnlockOpen(true);
     }, [vault, dek, loading]);
@@ -83,6 +84,52 @@ const SyncStatusButton = () => {
     const usagePercent = usage
         ? Math.min(100, (usage.usedBytes / usage.quotaBytes) * 100)
         : 0;
+
+    const overlays = (
+        <>
+            <EnableSyncModal isOpen={enableOpen} onClose={() => setEnableOpen(false)} />
+            <UnlockSyncModal
+                isOpen={unlockOpen}
+                onClose={() => setUnlockOpen(false)}
+                onForgotPassword={() => { setUnlockOpen(false); setForgotOpen(true); }}
+            />
+            <ForgotPasswordModal isOpen={forgotOpen} onClose={() => setForgotOpen(false)} />
+            <DisableSyncModal isOpen={disableOpen} onClose={() => setDisableOpen(false)} />
+            <ChangePasswordModal isOpen={changeOpen} onClose={() => setChangeOpen(false)} />
+
+            {notice && (
+                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm">
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                        <FiAlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">{notice}</p>
+                        <button onClick={() => setNotice(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <FiX className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {needsReload && (
+                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm">
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                        <FiRefreshCw className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">
+                            Settings were updated from another device. Reload to apply them.
+                        </p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="text-xs font-semibold text-aida-pink hover:underline flex-shrink-0"
+                        >
+                            Reload
+                        </button>
+                        <button onClick={dismissReload} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <FiX className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+        </>
+    );
 
     return (
         <>
@@ -194,47 +241,7 @@ const SyncStatusButton = () => {
                 </div>
             )}
 
-            <EnableSyncModal isOpen={enableOpen} onClose={() => setEnableOpen(false)} />
-            <UnlockSyncModal
-                isOpen={unlockOpen}
-                onClose={() => setUnlockOpen(false)}
-                onForgotPassword={() => { setUnlockOpen(false); setForgotOpen(true); }}
-            />
-            <ForgotPasswordModal isOpen={forgotOpen} onClose={() => setForgotOpen(false)} />
-            <DisableSyncModal isOpen={disableOpen} onClose={() => setDisableOpen(false)} />
-            <ChangePasswordModal isOpen={changeOpen} onClose={() => setChangeOpen(false)} />
-
-            {notice && (
-                <div className="fixed bottom-6 left-6 z-[3000] max-w-sm">
-                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                        <FiAlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">{notice}</p>
-                        <button onClick={() => setNotice(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                            <FiX className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {needsReload && (
-                <div className="fixed bottom-6 left-6 z-[3000] max-w-sm">
-                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                        <FiRefreshCw className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">
-                            Settings were updated from another device. Reload to apply them.
-                        </p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="text-xs font-semibold text-aida-pink hover:underline flex-shrink-0"
-                        >
-                            Reload
-                        </button>
-                        <button onClick={dismissReload} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                            <FiX className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
+            {createPortal(overlays, document.body)}
         </>
     );
 };

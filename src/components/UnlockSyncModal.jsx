@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FiX, FiLock, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
 import { useVault } from '../contexts/VaultContext';
 
@@ -29,9 +30,9 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-aida-card rounded-xl shadow-2xl w-full max-w-sm border border-aida-border">
+    return createPortal(
+        <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-aida-card rounded-xl shadow-2xl w-full max-w-sm border border-aida-border max-h-[90vh] overflow-y-auto my-auto">
                 <div className="flex items-center justify-between p-4 border-b border-aida-border">
                     <h2 className="text-lg font-bold text-aida-dark flex items-center gap-2">
                         <FiLock className="w-5 h-5 text-aida-pink" />
@@ -90,7 +91,8 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

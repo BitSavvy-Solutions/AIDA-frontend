@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FiX, FiCreditCard, FiLoader, FiDollarSign } from 'react-icons/fi';
 import creditService from '../services/creditService';
 
@@ -19,11 +20,8 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
         setLoading(true);
         setError('');
         try {
-            // --- SAVE THE OLD BALANCE BEFORE LEAVING ---
             localStorage.setItem('aida_pre_payment_balance', currentBalance || 0);
-            // 1. Call your Azure Backend
             const stripeUrl = await creditService.createCheckoutSession(userId, amount);
-            // 2. Redirect to Stripe
             window.location.href = stripeUrl;
         } catch (err) {
             setError('Failed to initialize payment. Please try again.');
@@ -38,11 +36,10 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
 
     const amounts = [10, 20, 50, 100];
 
-    return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6 relative border border-gray-200 dark:border-gray-700">
+    return createPortal(
+        <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md p-6 relative border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto my-auto">
                 
-                {/* Header */}
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <FiCreditCard className="text-pink-500" />
@@ -53,14 +50,12 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
                     </button>
                 </div>
 
-                {/* Error Message */}
                 {error && (
                     <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
                         {error}
                     </div>
                 )}
 
-                {/* Loading State */}
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-8">
                         <FiLoader className="animate-spin text-pink-500 w-10 h-10 mb-3" />
@@ -68,7 +63,6 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
                     </div>
                 ) : (
                     <>
-                        {/* Preset amounts */}
                         <div className="grid grid-cols-2 gap-4">
                             {amounts.map((amount) => (
                                 <button
@@ -84,7 +78,6 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
                             ))}
                         </div>
 
-                        {/* Custom Amount Input */}
                         <div className="relative">
                             <div className="absolute inset-0 flex items-center" aria-hidden="true">
                                 <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
@@ -124,7 +117,8 @@ const BuyCreditsModal = ({ userId, isOpen, onClose, currentBalance }) => {
                     Payments are securely processed by Stripe.
                 </p>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

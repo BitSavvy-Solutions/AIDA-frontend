@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     FiX, FiGlobe, FiDownload, FiCopy, FiCheck,
     FiEye, FiEyeOff, FiAlertTriangle,
@@ -107,9 +108,9 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
 
     const hasLocalData = counts && (counts.chats > 0 || counts.projects > 0);
 
-    return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-aida-card rounded-xl shadow-2xl w-full max-w-md border border-aida-border max-h-[90vh] overflow-y-auto">
+    return createPortal(
+        <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-aida-card rounded-xl shadow-2xl w-full max-w-md border border-aida-border max-h-[90vh] overflow-y-auto my-auto">
                 <div className="flex items-center justify-between p-4 border-b border-aida-border">
                     <h2 className="text-lg font-bold text-aida-dark flex items-center gap-2">
                         <FiGlobe className="w-5 h-5 text-aida-pink" />
@@ -305,7 +306,8 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

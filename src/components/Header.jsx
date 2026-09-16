@@ -1,5 +1,6 @@
 // src/components/Header.jsx
 import React, { useEffect, useState, useRef, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Disclosure, Menu, Transition } from '@headlessui/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,12 +15,10 @@ const Header = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
-    // --- THEME STATE ---
     const [theme, setTheme] = useState(() => {
         return localStorage.getItem('aida_theme') || 'light';
     });
 
-    // Apply theme globally to the <html> tag
     useEffect(() => {
         const root = document.documentElement;
         if (theme === 'dark') {
@@ -29,7 +28,6 @@ const Header = () => {
         }
         localStorage.setItem('aida_theme', theme);
     }, [theme]);
-    // -------------------
 
     const [balance, setBalance] = useState(() => {
         const stored = localStorage.getItem('aida_pre_payment_balance');
@@ -133,7 +131,6 @@ const Header = () => {
                                 <div className="flex items-center space-x-4">
                                     {isAuthenticated && user ? (
                                         <div className="flex items-center space-x-3">
-                                            {/* Balance Pill */}
                                             <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full px-3 py-1 border border-gray-200 dark:border-gray-700">
                                                 {isPolling && (
                                                     <FiLoader className="animate-spin text-pink-500 mr-2" title="Updating balance..." />
@@ -154,8 +151,6 @@ const Header = () => {
                                                 <SyncStatusButton />
                                             </div>
 
-
-                                            {/* Desktop Profile Dropdown */}
                                             <div className="hidden sm:block">
                                                 <Menu as="div" className="relative ml-3">
                                                     <div>
@@ -186,7 +181,6 @@ const Header = () => {
                                                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email || 'User Account'}</p>
                                                             </div>
 
-                                                            {/* THEME TOGGLE (Desktop) */}
                                                             <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/50">
                                                                 <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                                                     <button
@@ -245,7 +239,6 @@ const Header = () => {
                                                 </Menu>
                                             </div>
 
-                                            {/* Mobile Menu Button */}
                                             <div className="flex sm:hidden">
                                                 <Disclosure.Button className="inline-flex items-center justify-center p-2 text-gray-400 rounded-md hover:text-aida-pink hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-aida-pink">
                                                     <span className="sr-only">Open main menu</span>
@@ -270,7 +263,6 @@ const Header = () => {
                             </div>
                         </div>
 
-                        {/* Invisible overlay to detect clicks outside the mobile menu */}
                         {open && (
                             <button
                                 type="button"
@@ -280,7 +272,6 @@ const Header = () => {
                             />
                         )}
 
-                        {/* Mobile Navigation Panel */}
                         <Disclosure.Panel className="sm:hidden bg-white dark:bg-[#1e293b] border-t border-gray-100 dark:border-gray-800 shadow-lg absolute w-full z-50">
                             {isAuthenticated && user && (
                                 <div className="pt-4 pb-3 border-t border-gray-200">
@@ -300,7 +291,6 @@ const Header = () => {
                                         </div>
                                     </div>
 
-                                    {/* THEME TOGGLE (Mobile) */}
                                     <div className="px-5 mb-4">
                                         <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                             <button
@@ -365,8 +355,8 @@ const Header = () => {
                 currentBalance={balance}
             />
 
-            {notification && (
-                <div className="fixed bottom-6 left-6 z-[3000] animate-slide-up">
+            {notification && createPortal(
+                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm animate-slide-up">
                     <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${notification.type === 'processing'
                         ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                         : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
@@ -400,7 +390,8 @@ const Header = () => {
                             </svg>
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
