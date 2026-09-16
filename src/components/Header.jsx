@@ -9,9 +9,13 @@ import { HiSparkles } from 'react-icons/hi2';
 import creditService from '../services/creditService';
 import BuyCreditsModal from './BuyCreditsModal';
 import SyncStatusButton from './SyncStatusButton';
+import { useVault } from '../contexts/VaultContext';
+import SignOutModal from './SignOutModal';
 
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
+    const { vault } = useVault();
+    const [signOutOpen, setSignOutOpen] = useState(false);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
 
@@ -106,6 +110,11 @@ const Header = () => {
     };
 
     const handleLogout = () => {
+        // With encrypted sync set up, ask what to do with local chats first.
+        if (vault) {
+            setSignOutOpen(true);
+            return;
+        }
         logout();
         navigate('/');
     };
@@ -353,6 +362,11 @@ const Header = () => {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 currentBalance={balance}
+            />
+            <SignOutModal
+                isOpen={signOutOpen}
+                onClose={() => setSignOutOpen(false)}
+                onSignedOut={() => navigate('/')}
             />
 
             {notification && createPortal(

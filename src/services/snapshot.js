@@ -13,6 +13,7 @@ const LS_EXCLUDE = new Set([
     'aida-drive-token', 'aida-drive-token-expiry', 'aida-drive-last-synced-at',
     'aida_pre_payment_balance', 'aida-is-open',
     'aida-active-profile', 'aida-device-id', 'aida-device-label',
+    'aida-sync-notice', // device-local UI toast, must never sync
 ]);
 const SESSION_KEYS = ['aida-current-session-id'];
 
@@ -44,14 +45,14 @@ const sanitizeChats = (chats = []) => chats.map(chat => ({
     })),
 }));
 
+const isManagedKey = (key) =>
+    !LS_EXCLUDE.has(key) && (LS_INCLUDE_RE.test(key) || LS_INCLUDE_EXTRA.has(key));
+
 const readManagedLocalStorage = () => {
     const out = {};
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (LS_EXCLUDE.has(key)) continue;
-        if (LS_INCLUDE_RE.test(key) || LS_INCLUDE_EXTRA.has(key)) {
-            out[key] = localStorage.getItem(key);
-        }
+        if (isManagedKey(key)) out[key] = localStorage.getItem(key);
     }
     return out;
 };
@@ -173,7 +174,12 @@ export const mergeSnapshots = (local, remote) => {
 
 export const applySnapshot = async (snapshot) => {
     let configChanged = false;
-    const entries = snapshot.config || {};
+    const entries = {};
+    // Drop keys this client no longer manages, so older snapshots
+    // cannot resurrect excluded or removed keys.
+    for (const [key, e] of Object.entries(snapshot.config || {})) {
+        if (isManagedKey(key)) entries[key] = e;
+    }
 
     const current = readManagedLocalStorage();
     for (const key of Object.keys(current)) {
@@ -216,8 +222,7 @@ export const clearLocalData = async () => {
     const keys = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (LS_EXCLUDE.has(key)) continue;
-        if (LS_INCLUDE_RE.test(key) || LS_INCLUDE_EXTRA.has(key)) keys.push(key);
+        if (isManagedKey(key)) keys.push(key);
     }
     keys.forEach(k => localStorage.removeItem(k));
     SESSION_KEYS.forEach(k => sessionStorage.removeItem(k));

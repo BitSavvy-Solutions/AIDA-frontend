@@ -155,6 +155,9 @@ export const VaultProvider = ({ children }) => {
                 }
 
                 setVault(record || null);
+                // A vault exists, so any persisted "sync is off" notice left
+                // over from a previous disable is stale.
+                if (record) setNotice(null);
             } catch (e) {
                 console.error('[Vault] Failed to load vault:', e);
                 setVault(null);
@@ -163,7 +166,7 @@ export const VaultProvider = ({ children }) => {
             }
         };
         load();
-    }, [isAuthenticated, authLoading]);
+    }, [isAuthenticated, authLoading, setNotice]);
 
     const removeVault = useCallback(async () => {
         await vaultDb.remove();
@@ -220,6 +223,7 @@ export const VaultProvider = ({ children }) => {
                 const adopted = buildRecordFromServer(sp);
                 await vaultDb.put(adopted);
                 setVault(adopted);
+                setNotice(null); // sync is on again, stale "off" notice is cleared
                 try {
                     await unlockWithRecord(adopted, password);
                     return { adopted: true, unlocked: true };
@@ -233,6 +237,7 @@ export const VaultProvider = ({ children }) => {
         await vaultDb.put(record);
         setVault(record);
         setDek(dekKey);
+        setNotice(null); // sync is on again, stale "off" notice is cleared
         try {
             // dekKey from generateDEK() is extractable, so it can be wrapped
             // for this device immediately.
@@ -241,7 +246,7 @@ export const VaultProvider = ({ children }) => {
             console.error('[Vault] Could not persist device unlock:', e);
         }
         return { recoveryKey: recovery.display };
-    }, [unlockWithRecord, persistDeviceUnlock]);
+    }, [unlockWithRecord, persistDeviceUnlock, setNotice]);
 
     const unlock = useCallback(async (password, opts) => {
         const record = await vaultDb.get();
