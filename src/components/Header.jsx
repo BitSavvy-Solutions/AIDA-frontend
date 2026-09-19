@@ -7,6 +7,8 @@ import { FiLogOut, FiLogIn, FiPlus, FiLoader, FiStar, FiMenu, FiX, FiUser, FiHom
 import { HiSparkles } from 'react-icons/hi2';
 import creditService from '../services/creditService';
 import BuyCreditsModal from './BuyCreditsModal';
+import { FiBook } from 'react-icons/fi';
+
 
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
@@ -76,7 +78,7 @@ const Header = () => {
                             title: 'Payment Successful!',
                             message: `Your new balance is $${newBalance.toFixed(2)}`
                         });
-                        
+
                         localStorage.removeItem('aida_pre_payment_balance');
                         navigate('/', { replace: true });
 
@@ -128,7 +130,7 @@ const Header = () => {
                                     <HiSparkles className="w-8 h-8 text-aida-pink animate-pulse" />
                                     <span className="text-2xl font-bold text-aida-dark dark:text-white">AIDA</span>
                                 </Link>
-                                
+
                                 <div className="flex items-center space-x-4">
                                     {isAuthenticated && user ? (
                                         <div className="flex items-center space-x-3">
@@ -140,7 +142,7 @@ const Header = () => {
                                                 <span className={`text-sm font-bold mr-2 ${getBalanceColor(balance)}`}>
                                                     ${typeof balance === 'number' ? balance.toFixed(2) : '0.00'}
                                                 </span>
-                                                <button 
+                                                <button
                                                     onClick={() => setIsModalOpen(true)}
                                                     className="bg-aida-pink hover:bg-pink-600 text-white rounded-full p-1 transition-colors"
                                                     title="Add Credits"
@@ -185,21 +187,19 @@ const Header = () => {
                                                                 <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('light'); }}
-                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${
-                                                                            theme === 'light' 
-                                                                            ? 'bg-white text-gray-900 shadow-sm' 
-                                                                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                                                                        }`}
+                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'light'
+                                                                                ? 'bg-white text-gray-900 shadow-sm'
+                                                                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                                                                            }`}
                                                                     >
                                                                         <FiSun className="w-4 h-4" />
                                                                     </button>
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('dark'); }}
-                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${
-                                                                            theme === 'dark' 
-                                                                            ? 'bg-[#1e293b] text-white shadow-sm' 
-                                                                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                                                                        }`}
+                                                                        className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'dark'
+                                                                                ? 'bg-[#1e293b] text-white shadow-sm'
+                                                                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                                                                            }`}
                                                                     >
                                                                         <FiMoon className="w-4 h-4" />
                                                                     </button>
@@ -223,6 +223,19 @@ const Header = () => {
                                                                         className={`${active ? 'bg-gray-50 dark:bg-gray-700 text-aida-pink' : 'text-gray-700 dark:text-gray-200'} flex items-center px-4 py-2 text-sm transition-colors`}
                                                                     >
                                                                         <FiUser className="mr-2" /> Account
+                                                                    </Link>
+                                                                )}
+                                                            </Menu.Item>
+                                                            <Menu.Item>
+                                                                {({ active }) => (
+                                                                    <Link
+                                                                        to="/pkb"
+                                                                        className={`${active
+                                                                                ? 'bg-gray-50 dark:bg-gray-700 text-aida-pink'
+                                                                                : 'text-gray-700 dark:text-gray-200'
+                                                                            } flex items-center px-4 py-2 text-sm transition-colors`}
+                                                                    >
+                                                                        <FiBook className="mr-2" /> PKB
                                                                     </Link>
                                                                 )}
                                                             </Menu.Item>
@@ -258,7 +271,7 @@ const Header = () => {
                                             to="/login"
                                             className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-aida-pink rounded-lg hover:opacity-90 transition-opacity"
                                         >
-                                            <FiLogIn className="mr-2 h-4 w-4"/>
+                                            <FiLogIn className="mr-2 h-4 w-4" />
                                             Join Beta
                                         </Link>
                                     )}
@@ -268,10 +281,10 @@ const Header = () => {
 
                         {/* Invisible overlay to detect clicks outside the mobile menu */}
                         {open && (
-                            <button 
+                            <button
                                 type="button"
-                                className="fixed inset-0 top-16 z-40 w-full h-full bg-transparent cursor-default sm:hidden" 
-                                onClick={() => close()} 
+                                className="fixed inset-0 top-16 z-40 w-full h-full bg-transparent cursor-default sm:hidden"
+                                onClick={() => close()}
                                 tabIndex={-1}
                             />
                         )}
@@ -301,21 +314,19 @@ const Header = () => {
                                         <div className="flex items-center bg-gray-100 dark:bg-[#0f172a] rounded-lg p-1">
                                             <button
                                                 onClick={() => setTheme('light')}
-                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${
-                                                    theme === 'light' 
-                                                    ? 'bg-white text-gray-900 shadow-sm' 
-                                                    : 'text-gray-500 dark:text-gray-400'
-                                                }`}
+                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'light'
+                                                        ? 'bg-white text-gray-900 shadow-sm'
+                                                        : 'text-gray-500 dark:text-gray-400'
+                                                    }`}
                                             >
                                                 <FiSun className="w-5 h-5 mr-2" /> Light
                                             </button>
                                             <button
                                                 onClick={() => setTheme('dark')}
-                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${
-                                                    theme === 'dark' 
-                                                    ? 'bg-[#1e293b] text-white shadow-sm' 
-                                                    : 'text-gray-500 dark:text-gray-400'
-                                                }`}
+                                                className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'dark'
+                                                        ? 'bg-[#1e293b] text-white shadow-sm'
+                                                        : 'text-gray-500 dark:text-gray-400'
+                                                    }`}
                                             >
                                                 <FiMoon className="w-5 h-5 mr-2" /> Dark
                                             </button>
@@ -338,6 +349,13 @@ const Header = () => {
                                             <FiUser className="mr-3" /> Account
                                         </Disclosure.Button>
                                         <Disclosure.Button
+                                            as={Link}
+                                            to="/pkb"
+                                            className="flex items-center px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-200 rounded-md hover:text-aida-pink hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                                        >
+                                            <FiBook className="mr-3" /> PKB
+                                        </Disclosure.Button>
+                                        <Disclosure.Button
                                             as="button"
                                             onClick={handleLogout}
                                             className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-200 rounded-md hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-50 dark:hover:bg-red-900/20"
@@ -352,23 +370,21 @@ const Header = () => {
                 )}
             </Disclosure>
 
-            <BuyCreditsModal 
-                userId={user?.id} 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
+            <BuyCreditsModal
+                userId={user?.id}
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
                 currentBalance={balance}
             />
 
             {notification && (
                 <div className="fixed bottom-6 left-6 z-[3000] animate-slide-up">
-                    <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${
-                        notification.type === 'processing' 
-                            ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' 
+                    <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${notification.type === 'processing'
+                            ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                             : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
-                    }`}>
-                        <div className={`p-2 rounded-full ${
-                            notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
                         }`}>
+                        <div className={`p-2 rounded-full ${notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
+                            }`}>
                             {notification.type === 'processing' ? (
                                 <FiLoader className="w-6 h-6 text-blue-500 animate-spin" />
                             ) : (
@@ -377,9 +393,8 @@ const Header = () => {
                         </div>
 
                         <div>
-                            <h4 className={`text-sm font-bold ${
-                                notification.type === 'processing' ? 'text-gray-900 dark:text-white' : 'text-green-800 dark:text-green-200'
-                            }`}>
+                            <h4 className={`text-sm font-bold ${notification.type === 'processing' ? 'text-gray-900 dark:text-white' : 'text-green-800 dark:text-green-200'
+                                }`}>
                                 {notification.title}
                             </h4>
                             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -387,7 +402,7 @@ const Header = () => {
                             </p>
                         </div>
 
-                        <button 
+                        <button
                             onClick={() => setNotification(null)}
                             className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                         >
