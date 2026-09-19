@@ -1,6 +1,5 @@
 // src/pages/PkbPage.jsx
 import React, { useState, useEffect } from 'react';
-import Dexie from 'dexie';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
     FiPlus,
@@ -9,32 +8,26 @@ import {
     FiTrash2,
     FiUpload,
     FiLock,
+    FiRefreshCw,
+    FiDownload,
+    FiKey,
+    FiX,
 } from 'react-icons/fi';
 
-// Local only PKB database.
-// Later, sync metadata can be added without changing the page structure.
-const getDb = () => {
-    if (!window.__pkbDb) {
-        const db = new Dexie('pkb-local');
+import { useAuth } from '../contexts/AuthContext';
 
-        db.version(1).stores({
-            docs: 'id, kind, title, modified, *tagIds, *resourceIds',
-            meta: 'key',
-        });
-
-        window.__pkbDb = db;
-    }
-
-    return window.__pkbDb;
-};
-
-const db = getDb();
-
-const uid = (prefix) => {
-    return `${prefix}_${Date.now().toString(36)}_${Math.random()
-        .toString(36)
-        .slice(2, 10)}`;
-};
+import {
+    db,
+    uid,
+    discoverPkbVaultId,
+    createPkbVault,
+    unlockPkbVault,
+    resetPasswordWithRecovery,
+    startPkbSync,
+    stopPkbSync,
+    requestPkbSync,
+    syncNow,
+} from '../services/pkbSync';
 
 const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -82,18 +75,84 @@ const AttachmentPreview = ({ attachment, onOpen }) => {
 };
 
 const PkbPage = () => {
+    const { user, apiToken, isAuthenticated } = useAuth();
+
     const [selectedTagId, setSelectedTagId] = useState('all');
     const [selectedNoteId, setSelectedNoteId] = useState('');
     const [newTagName, setNewTagName] = useState('');
 
+    const [vaultId, setVaultId] = useState('');
+    const [dek, setDek] = useState(null);
+
+    const [syncStatus, setSyncStatus] = useState('');
+    const [syncError, setSyncError] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    const [showSyncSetup, setShowSyncSetup] = useState(false);
+    const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+
+    const [mode, setMode] = useState('create');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+
+    const [recoveryInput, setRecoveryInput] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+    const [recoveryKey, setRecoveryKey] = useState('');
+    const [recoverySaved, setRecoverySaved] = useState(false);
+
+    // Discover existing vault for this user.
+    useEffect(() => {
+        if (!isAuthenticated || !user?.id || !apiToken) {
+            setVaultId('');
+            setDek(null);
+            return;
+        }
+
+        discoverPkbVaultId(apiToken, user.id)
+            .then((id) => {
+                setVaultId(id || '');
+            })
+            .catch((error) => {
+                console.error('Vault discovery failed:', error);
+            });
+    }, [isAuthenticated, user?.id, apiToken]);
+
+    // Start and stop sync engine.
+    useEffect(() => {
+        if (!isAuthenticated || !apiToken || !vaultId || !dek) {
+            return;
+        }
+
+        startPkbSync({
+            token: apiToken,
+            vaultId,
+            dek,
+            onStatus: setSyncStatus,
+        });
+
+        return () => {
+            stopPkbSync();
+        };
+    }, [isAuthenticated, apiToken, vaultId, dek]);
+
     const tags =
         useLiveQuery(() => {
-            return db.docs.where('kind').equals('tag').sortBy('title');
+            return db.docs
+                .where('kind')
+                .equals('tag')
+                .and((tag) => !tag.deleted)
+                .sortBy('title');
         }, []) || [];
 
     const notes =
         useLiveQuery(async () => {
-            const rows = await db.docs.where('kind').equals('note').toArray();
+            const rows = await db.docs
+                .where('kind')
+                .equals('note')
+                .and((note) => !note.deleted)
+                .toArray();
 
             const filtered =
                 selectedTagId === 'all'
@@ -112,6 +171,12 @@ const PkbPage = () => {
         return db.docs.get(selectedNoteId);
     }, [selectedNoteId]);
 
+    useEffect(() => {
+        if (note?.deleted) {
+            setSelectedNoteId('');
+        }
+    }, [note?.deleted]);
+
     const resourceIdsKey = (note?.resourceIds || []).join(',');
 
     const attachments =
@@ -119,7 +184,9 @@ const PkbPage = () => {
             if (!resourceIdsKey) return [];
 
             const ids = resourceIdsKey.split(',');
-            return db.docs.where('id').anyOf(ids).toArray();
+            const rows = await db.docs.where('id').anyOf(ids).toArray();
+
+            return rows.filter((row) => !row.deleted);
         }, [resourceIdsKey]) || [];
 
     const createNote = async () => {
@@ -135,9 +202,12 @@ const PkbPage = () => {
             resourceIds: [],
             created: now,
             modified: now,
+            dirty: 1,
+            deleted: 0,
         });
 
         setSelectedNoteId(id);
+        requestPkbSync(500);
     };
 
     const createTag = async () => {
@@ -164,10 +234,13 @@ const PkbPage = () => {
             title,
             created: now,
             modified: now,
+            dirty: 1,
+            deleted: 0,
         });
 
         setSelectedTagId(id);
         setNewTagName('');
+        requestPkbSync(500);
     };
 
     const updateNote = async (changes) => {
@@ -176,7 +249,10 @@ const PkbPage = () => {
         await db.docs.update(note.id, {
             ...changes,
             modified: new Date().toISOString(),
+            dirty: 1,
         });
+
+        requestPkbSync(2000);
     };
 
     const toggleTagOnNote = async (tagId) => {
@@ -204,29 +280,41 @@ const PkbPage = () => {
 
         if (!confirmed) return;
 
-        const resourceIds = note.resourceIds || [];
+        const now = new Date().toISOString();
+
+        await db.docs.update(note.id, {
+            deleted: 1,
+            dirty: 1,
+            modified: now,
+        });
 
         const allNotes = await db.docs
             .where('kind')
             .equals('note')
             .toArray();
 
-        const orphanResourceIds = resourceIds.filter((resourceId) => {
-            return !allNotes.some((item) => {
-                return (
-                    item.id !== note.id &&
-                    (item.resourceIds || []).includes(resourceId)
-                );
+        const orphanResourceIds = (note.resourceIds || []).filter(
+            (resourceId) => {
+                return !allNotes.some((item) => {
+                    return (
+                        item.id !== note.id &&
+                        !item.deleted &&
+                        (item.resourceIds || []).includes(resourceId)
+                    );
+                });
+            }
+        );
+
+        for (const resourceId of orphanResourceIds) {
+            await db.docs.update(resourceId, {
+                deleted: 1,
+                dirty: 1,
+                modified: now,
             });
-        });
-
-        await db.docs.delete(note.id);
-
-        if (orphanResourceIds.length) {
-            await db.docs.bulkDelete(orphanResourceIds);
         }
 
         setSelectedNoteId('');
+        requestPkbSync(500);
     };
 
     const attachFile = async (event) => {
@@ -246,6 +334,9 @@ const PkbPage = () => {
             blob: file,
             created: now,
             modified: now,
+            dirty: 1,
+            deleted: 0,
+            blobDirty: 1,
         });
 
         await updateNote({
@@ -253,6 +344,7 @@ const PkbPage = () => {
         });
 
         event.target.value = '';
+        requestPkbSync(500);
     };
 
     const removeAttachment = async (resourceId) => {
@@ -280,13 +372,20 @@ const PkbPage = () => {
         const stillUsed = allNotes.some((item) => {
             return (
                 item.id !== note.id &&
+                !item.deleted &&
                 (item.resourceIds || []).includes(resourceId)
             );
         });
 
         if (!stillUsed) {
-            await db.docs.delete(resourceId);
+            await db.docs.update(resourceId, {
+                deleted: 1,
+                dirty: 1,
+                modified: new Date().toISOString(),
+            });
         }
+
+        requestPkbSync(500);
     };
 
     const openAttachment = (attachment) => {
@@ -300,26 +399,232 @@ const PkbPage = () => {
         }, 60000);
     };
 
+    const openSyncSetup = () => {
+        setSyncError('');
+        setPassword('');
+        setConfirmPassword('');
+        setRecoveryInput('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setMode(vaultId ? 'unlock' : 'create');
+        setShowSyncSetup(true);
+    };
+
+    const handleCreateVault = async () => {
+        setSyncError('');
+
+        if (password.length < 8) {
+            setSyncError('Password must be at least 8 characters.');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setSyncError('Passwords do not match.');
+            return;
+        }
+
+        setBusy(true);
+
+        try {
+            const result = await createPkbVault(apiToken, user.id, password);
+
+            setVaultId(result.vaultId);
+            setDek(result.dek);
+            setRecoveryKey(result.recoveryKey);
+
+            setShowSyncSetup(false);
+            setShowRecoveryKey(true);
+        } catch (error) {
+            setSyncError(error.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const handleUnlock = async () => {
+        setSyncError('');
+
+        if (!password) {
+            setSyncError('Please enter your password.');
+            return;
+        }
+
+        setBusy(true);
+
+        try {
+            const result = await unlockPkbVault(apiToken, user.id, password);
+
+            setVaultId(result.vaultId);
+            setDek(result.dek);
+
+            setPassword('');
+            setShowSyncSetup(false);
+        } catch (error) {
+            setSyncError(error.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const handleRecoveryReset = async () => {
+        setSyncError('');
+
+        if (!recoveryInput.trim()) {
+            setSyncError('Please enter your recovery key.');
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            setSyncError('New password must be at least 8 characters.');
+            return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+            setSyncError('New passwords do not match.');
+            return;
+        }
+
+        setBusy(true);
+
+        try {
+            const result = await resetPasswordWithRecovery(
+                apiToken,
+                user.id,
+                recoveryInput,
+                newPassword
+            );
+
+            setVaultId(result.vaultId);
+            setDek(result.dek);
+
+            setRecoveryInput('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            setShowSyncSetup(false);
+
+            setSyncStatus('Password reset complete. Sync unlocked.');
+        } catch (error) {
+            setSyncError(error.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const copyRecoveryKey = async () => {
+        try {
+            await navigator.clipboard.writeText(recoveryKey);
+        } catch (error) {
+            console.error('Could not copy recovery key:', error);
+        }
+    };
+
+    const downloadRecoveryKey = () => {
+        const content = [
+            'PKB recovery key',
+            '',
+            'Keep this key somewhere safe. It can reset your PKB sync password if you forget it.',
+            '',
+            recoveryKey,
+            '',
+        ].join('\n');
+
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'pkb-recovery-key.txt';
+        anchor.click();
+
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 5000);
+    };
+
+    const lockSync = () => {
+        stopPkbSync();
+        setDek(null);
+        setSyncStatus('Sync locked.');
+    };
+
     return (
         <div className="bg-aida-light min-h-screen">
             <div className="border-b border-aida-border bg-aida-card px-4 py-3">
-                <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+                <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
                     <div>
                         <h1 className="text-lg font-bold text-aida-dark">
                             PKB
                         </h1>
                         <p className="text-xs text-aida-text-muted">
-                            Local browser notebook. Vault sync will be added
-                            later.
+                            Notes, tags, and attachments. Encrypted sync can be
+                            enabled with your password.
                         </p>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
-                        <FiLock />
-                        <span>Stored only in this browser</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {syncStatus && (
+                            <span className="rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
+                                {syncStatus}
+                            </span>
+                        )}
+
+                        {!isAuthenticated && (
+                            <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
+                                <FiLock />
+                                <span>Log in to enable encrypted sync</span>
+                            </div>
+                        )}
+
+                        {isAuthenticated && !vaultId && (
+                            <button
+                                onClick={openSyncSetup}
+                                className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                            >
+                                <FiKey />
+                                Enable encrypted sync
+                            </button>
+                        )}
+
+                        {isAuthenticated && vaultId && !dek && (
+                            <button
+                                onClick={openSyncSetup}
+                                className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                            >
+                                <FiLock />
+                                Unlock sync
+                            </button>
+                        )}
+
+                        {dek && (
+                            <>
+                                <button
+                                    onClick={() => syncNow()}
+                                    className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"
+                                >
+                                    <FiRefreshCw />
+                                    Sync now
+                                </button>
+
+                                <button
+                                    onClick={lockSync}
+                                    className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"
+                                >
+                                    <FiLock />
+                                    Lock
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
+
+            {syncError && (
+                <div className="mx-auto max-w-7xl px-4 pt-4">
+                    <div className="rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">
+                        {syncError}
+                    </div>
+                </div>
+            )}
 
             <div
                 className="mx-auto flex max-w-7xl gap-4 p-4"
@@ -422,7 +727,7 @@ const PkbPage = () => {
                 </section>
 
                 <section className="flex-1 overflow-y-auto rounded-2xl border border-aida-border bg-aida-card p-4">
-                    {!note ? (
+                    {!note || note.deleted ? (
                         <div className="flex h-full items-center justify-center text-sm text-aida-text-muted">
                             Select a note or create a new note.
                         </div>
@@ -586,6 +891,234 @@ const PkbPage = () => {
                     )}
                 </section>
             </div>
+
+            {showSyncSetup && (
+                <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-lg rounded-2xl border border-aida-border bg-aida-card p-6 shadow-2xl">
+                        <div className="mb-4 flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-aida-dark">
+                                {mode === 'create' && 'Enable encrypted sync'}
+                                {mode === 'unlock' && 'Unlock PKB sync'}
+                                {mode === 'recovery' && 'Recover PKB sync'}
+                            </h2>
+
+                            <button
+                                onClick={() => setShowSyncSetup(false)}
+                                className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"
+                            >
+                                <FiX />
+                            </button>
+                        </div>
+
+                        {syncError && (
+                            <div className="mb-4 rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">
+                                {syncError}
+                            </div>
+                        )}
+
+                        {mode === 'create' && (
+                            <div className="space-y-4">
+                                <p className="text-sm text-aida-text-muted">
+                                    Choose a sync password. This password is
+                                    used to encrypt your PKB data before it is
+                                    uploaded. It is not stored on the server.
+                                </p>
+
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(event) =>
+                                        setPassword(event.target.value)
+                                    }
+                                    placeholder="Sync password"
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <input
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={(event) =>
+                                        setConfirmPassword(event.target.value)
+                                    }
+                                    placeholder="Confirm sync password"
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <button
+                                    onClick={handleCreateVault}
+                                    disabled={busy}
+                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                    {busy ? 'Creating vault...' : 'Create encrypted vault'}
+                                </button>
+                            </div>
+                        )}
+
+                        {mode === 'unlock' && (
+                            <div className="space-y-4">
+                                <p className="text-sm text-aida-text-muted">
+                                    Enter your PKB sync password to unlock
+                                    encrypted sync.
+                                </p>
+
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={(event) =>
+                                        setPassword(event.target.value)
+                                    }
+                                    placeholder="Sync password"
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <button
+                                    onClick={handleUnlock}
+                                    disabled={busy}
+                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                    {busy ? 'Unlocking...' : 'Unlock sync'}
+                                </button>
+
+                                <button
+                                    onClick={() => setMode('recovery')}
+                                    className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
+                                >
+                                    Forgot password? Use recovery key
+                                </button>
+                            </div>
+                        )}
+
+                        {mode === 'recovery' && (
+                            <div className="space-y-4">
+                                <p className="text-sm text-aida-text-muted">
+                                    Enter your recovery key and choose a new
+                                    sync password.
+                                </p>
+
+                                <textarea
+                                    value={recoveryInput}
+                                    onChange={(event) =>
+                                        setRecoveryInput(event.target.value)
+                                    }
+                                    placeholder="Recovery key"
+                                    rows={3}
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <input
+                                    type="password"
+                                    value={newPassword}
+                                    onChange={(event) =>
+                                        setNewPassword(event.target.value)
+                                    }
+                                    placeholder="New sync password"
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <input
+                                    type="password"
+                                    value={confirmNewPassword}
+                                    onChange={(event) =>
+                                        setConfirmNewPassword(
+                                            event.target.value
+                                        )
+                                    }
+                                    placeholder="Confirm new sync password"
+                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
+                                />
+
+                                <button
+                                    onClick={handleRecoveryReset}
+                                    disabled={busy}
+                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                                >
+                                    {busy ? 'Recovering...' : 'Reset password and unlock'}
+                                </button>
+
+                                <button
+                                    onClick={() => setMode('unlock')}
+                                    className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
+                                >
+                                    Back to password unlock
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showRecoveryKey && (
+                <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 p-4">
+                    <div className="w-full max-w-2xl rounded-2xl border border-aida-border bg-aida-card p-6 shadow-2xl">
+                        <div className="mb-4 flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-aida-dark">
+                                Save your recovery key
+                            </h2>
+
+                            <button
+                                onClick={() => setShowRecoveryKey(false)}
+                                disabled={!recoverySaved}
+                                className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light disabled:opacity-40"
+                            >
+                                <FiX />
+                            </button>
+                        </div>
+
+                        <p className="mb-4 text-sm text-aida-text-muted">
+                            This recovery key can reset your PKB sync password
+                            if you forget it. It is shown only once. Store it
+                            somewhere safe.
+                        </p>
+
+                        <textarea
+                            readOnly
+                            value={recoveryKey}
+                            rows={4}
+                            className="mb-4 w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 font-mono text-xs text-aida-dark"
+                        />
+
+                        <div className="mb-4 flex flex-wrap gap-2">
+                            <button
+                                onClick={copyRecoveryKey}
+                                className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
+                            >
+                                <FiKey />
+                                Copy
+                            </button>
+
+                            <button
+                                onClick={downloadRecoveryKey}
+                                className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
+                            >
+                                <FiDownload />
+                                Download
+                            </button>
+                        </div>
+
+                        <label className="mb-4 flex items-center gap-2 text-sm text-aida-text-muted">
+                            <input
+                                type="checkbox"
+                                checked={recoverySaved}
+                                onChange={(event) =>
+                                    setRecoverySaved(event.target.checked)
+                                }
+                            />
+                            I saved this recovery key somewhere safe.
+                        </label>
+
+                        <button
+                            onClick={() => {
+                                setShowRecoveryKey(false);
+                                setRecoverySaved(false);
+                            }}
+                            disabled={!recoverySaved}
+                            className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                            Continue to PKB
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
