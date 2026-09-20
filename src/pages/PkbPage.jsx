@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
     db,
     uid,
-    discoverPkbVaultId,
+    getPkbVaultStatus,
     createPkbVault,
     unlockPkbVault,
     resetPasswordWithRecovery,
@@ -81,7 +81,7 @@ const PkbPage = () => {
     const [selectedNoteId, setSelectedNoteId] = useState('');
     const [newTagName, setNewTagName] = useState('');
 
-    const [vaultId, setVaultId] = useState('');
+    const [vaultExists, setVaultExists] = useState(false);
     const [dek, setDek] = useState(null);
 
     const [syncStatus, setSyncStatus] = useState('');
@@ -102,32 +102,41 @@ const PkbPage = () => {
     const [recoveryKey, setRecoveryKey] = useState('');
     const [recoverySaved, setRecoverySaved] = useState(false);
 
-    // Discover existing vault for this user.
+    // Clean up old vault-id localStorage keys (migration)
     useEffect(() => {
-        if (!isAuthenticated || !user?.id || !apiToken) {
-            setVaultId('');
+        Object.keys(localStorage)
+            .filter((key) => key.startsWith('pkbVaultId:'))
+            .forEach((key) => {
+                localStorage.removeItem(key);
+            });
+    }, []);
+
+    // Check if a PKB vault exists for this user
+    useEffect(() => {
+        if (!isAuthenticated || !apiToken) {
+            setVaultExists(false);
             setDek(null);
             return;
         }
 
-        discoverPkbVaultId(apiToken, user.id)
-            .then((id) => {
-                setVaultId(id || '');
+        getPkbVaultStatus(apiToken)
+            .then((exists) => {
+                setVaultExists(exists);
             })
             .catch((error) => {
-                console.error('Vault discovery failed:', error);
+                console.error('PKB vault status check failed:', error);
+                setVaultExists(false);
             });
-    }, [isAuthenticated, user?.id, apiToken]);
+    }, [isAuthenticated, apiToken]);
 
-    // Start and stop sync engine.
+    // Start / stop sync engine when dek is available
     useEffect(() => {
-        if (!isAuthenticated || !apiToken || !vaultId || !dek) {
+        if (!isAuthenticated || !apiToken || !dek) {
             return;
         }
 
         startPkbSync({
             token: apiToken,
-            vaultId,
             dek,
             onStatus: setSyncStatus,
         });
@@ -135,7 +144,7 @@ const PkbPage = () => {
         return () => {
             stopPkbSync();
         };
-    }, [isAuthenticated, apiToken, vaultId, dek]);
+    }, [isAuthenticated, apiToken, dek]);
 
     const tags =
         useLiveQuery(() => {
@@ -406,7 +415,7 @@ const PkbPage = () => {
         setRecoveryInput('');
         setNewPassword('');
         setConfirmNewPassword('');
-        setMode(vaultId ? 'unlock' : 'create');
+        setMode(vaultExists ? 'unlock' : 'create');
         setShowSyncSetup(true);
     };
 
@@ -426,10 +435,10 @@ const PkbPage = () => {
         setBusy(true);
 
         try {
-            const result = await createPkbVault(apiToken, user.id, password);
+            const result = await createPkbVault(apiToken, password);
 
-            setVaultId(result.vaultId);
             setDek(result.dek);
+            setVaultExists(true);
             setRecoveryKey(result.recoveryKey);
 
             setShowSyncSetup(false);
@@ -452,9 +461,8 @@ const PkbPage = () => {
         setBusy(true);
 
         try {
-            const result = await unlockPkbVault(apiToken, user.id, password);
+            const result = await unlockPkbVault(apiToken, password);
 
-            setVaultId(result.vaultId);
             setDek(result.dek);
 
             setPassword('');
@@ -489,12 +497,10 @@ const PkbPage = () => {
         try {
             const result = await resetPasswordWithRecovery(
                 apiToken,
-                user.id,
                 recoveryInput,
                 newPassword
             );
 
-            setVaultId(result.vaultId);
             setDek(result.dek);
 
             setRecoveryInput('');
@@ -575,7 +581,7 @@ const PkbPage = () => {
                             </div>
                         )}
 
-                        {isAuthenticated && !vaultId && (
+                        {isAuthenticated && !vaultExists && (
                             <button
                                 onClick={openSyncSetup}
                                 className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
@@ -585,7 +591,7 @@ const PkbPage = () => {
                             </button>
                         )}
 
-                        {isAuthenticated && vaultId && !dek && (
+                        {isAuthenticated && vaultExists && !dek && (
                             <button
                                 onClick={openSyncSetup}
                                 className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"

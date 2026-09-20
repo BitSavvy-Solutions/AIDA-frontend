@@ -4,16 +4,18 @@ const isDevelopment = import.meta.env.MODE === 'development';
 
 const config = {
     AZURE_FUNCTIONS_URL: isDevelopment
-        ? 'http://localhost:7071/api'
+        ? 'https://aitutfunc.azurewebsites.net/api'
         : 'https://aitutfunc.azurewebsites.net/api',
 
     FASTAPI_URL: isDevelopment
-        ? 'http://localhost:8080/api'
+        ? 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api'
         : 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api',    
 
     FRONTEND_URL: isDevelopment
         ? 'http://localhost:5173'
         : window.location.origin,
+
+    VAULT_URL : 'http://localhost:8080/api',
 
     FUNCTION_HOST_KEY: 'dlkgVHOPghXdpOeE9SgyYe0r6nN3AjuEowskmJsDDhrBAzFuSlPb7g==',
 

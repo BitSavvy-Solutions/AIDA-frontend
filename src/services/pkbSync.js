@@ -27,9 +27,11 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const REMOTE_TOLERANCE_MS = 2000;
 const KDF_ITERATIONS = 310000;
 
+const docKey = (id) => `${id}.enc`;
+const blobKey = (id) => `blob_${id}.enc`;
+
 const engine = {
     token: null,
-    vaultId: null,
     dek: null,
     timer: null,
     debounceTimer: null,
@@ -55,17 +57,6 @@ export async function getMeta(key) {
     const row = await db.meta.get(key);
     return row?.value;
 }
-
-export function getStoredVaultId(userId) {
-    return localStorage.getItem(`pkbVaultId:${userId}`) || '';
-}
-
-export function setStoredVaultId(userId, vaultId) {
-    localStorage.setItem(`pkbVaultId:${userId}`, vaultId);
-}
-
-const docKey = (id) => `${id}.enc`;
-const blobKey = (id) => `blob_${id}.enc`;
 
 const fileNameFromKey = (key) => key.split('/').pop() || '';
 
@@ -341,10 +332,10 @@ async function decryptBlobFromBuffer(dek, buffer, mimeType) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Vault backend API
+// Vault backend API (app‑scoped, no vaultId)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const vaultBaseUrl = () => `${config.FASTAPI_URL}/vault`;
+const vaultBaseUrl = () => `${config.VAULT_URL}/vault`;
 
 async function vaultFetch(path, { method = 'GET', token, body } = {}) {
     const headers = {
@@ -400,83 +391,32 @@ async function vaultFetch(path, { method = 'GET', token, body } = {}) {
     return data || {};
 }
 
-async function listVaults(token, appId = APP_ID) {
-    const data = await vaultFetch(`/vaults?appId=${encodeURIComponent(appId)}`, {
-        token,
-    });
-
-    return data?.data || [];
-}
-
-async function getVault(token, vaultId) {
-    const data = await vaultFetch(`/vaults/${vaultId}`, {
-        token,
-    });
-
-    return data?.data;
-}
-
-async function updateVault(token, vaultId, payload) {
-    const data = await vaultFetch(`/vaults/${vaultId}`, {
-        method: 'PATCH',
-        token,
-        body: payload,
-    });
-
-    return data?.data;
-}
-
-async function resolveVault(token, userId) {
-    const storedVaultId = getStoredVaultId(userId);
-
-    if (storedVaultId) {
-        try {
-            return await getVault(token, storedVaultId);
-        } catch (error) {
-            if (error.status !== 404) {
-                throw error;
-            }
-
-            localStorage.removeItem(`pkbVaultId:${userId}`);
-        }
-    }
-
-    const vaults = await listVaults(token, APP_ID);
-
-    if (!vaults.length) {
-        throw new Error('No PKB vault found for this account.');
-    }
-
-    setStoredVaultId(userId, vaults[0].vaultId);
-    return vaults[0];
-}
-
-export async function discoverPkbVaultId(token, userId) {
-    const storedVaultId = getStoredVaultId(userId);
-
-    if (storedVaultId) {
-        return storedVaultId;
-    }
-
+async function getAppVault(token) {
     try {
-        const vaults = await listVaults(token, APP_ID);
-
-        if (vaults.length) {
-            setStoredVaultId(userId, vaults[0].vaultId);
-            return vaults[0].vaultId;
-        }
+        const data = await vaultFetch(`/apps/${APP_ID}/vault`, { token });
+        return data?.data || null;
     } catch (error) {
-        console.warn('Could not discover PKB vault:', error);
+        if (error.status === 404) {
+            return null;
+        }
+        throw error;
     }
+}
 
-    return '';
+export async function getPkbVaultStatus(token) {
+    try {
+        const data = await vaultFetch(`/apps/${APP_ID}/vault/status`, { token });
+        return Boolean(data?.data?.exists);
+    } catch {
+        return false;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Sync endpoint helpers
+// Sync endpoint helpers (app‑scoped, relative keys)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function listAllObjects(token, vaultId) {
+async function listAllObjects(token) {
     let cursor = null;
     const objects = [];
 
@@ -486,7 +426,7 @@ async function listAllObjects(token, vaultId) {
             : '';
 
         const data = await vaultFetch(
-            `/vaults/${vaultId}/sync/list${query}`,
+            `/apps/${APP_ID}/sync/list${query}`,
             { token }
         );
 
@@ -505,9 +445,9 @@ async function listAllObjects(token, vaultId) {
     return objects;
 }
 
-async function presignPut(token, vaultId, key) {
+async function presignPut(token, key) {
     const data = await vaultFetch(
-        `/vaults/${vaultId}/sync/presign-put`,
+        `/apps/${APP_ID}/sync/presign-put`,
         {
             method: 'POST',
             token,
@@ -518,13 +458,13 @@ async function presignPut(token, vaultId, key) {
     return data?.data?.uploadUrl;
 }
 
-async function presignGets(token, vaultId, keys) {
+async function presignGets(token, keys) {
     if (!keys.length) {
         return [];
     }
 
     const data = await vaultFetch(
-        `/vaults/${vaultId}/sync/presign-get`,
+        `/apps/${APP_ID}/sync/presign-get`,
         {
             method: 'POST',
             token,
@@ -535,7 +475,7 @@ async function presignGets(token, vaultId, keys) {
     return data?.data?.objects || [];
 }
 
-async function deleteRemoteKeys(token, vaultId, keys) {
+async function deleteRemoteKeys(token, keys) {
     if (!keys.length) {
         return;
     }
@@ -543,7 +483,7 @@ async function deleteRemoteKeys(token, vaultId, keys) {
     for (let i = 0; i < keys.length; i += 1000) {
         const batch = keys.slice(i, i + 1000);
 
-        await vaultFetch(`/vaults/${vaultId}/sync/delete`, {
+        await vaultFetch(`/apps/${APP_ID}/sync/delete`, {
             method: 'POST',
             token,
             body: { keys: batch },
@@ -562,8 +502,8 @@ async function uploadToPresignedUrl(url, body) {
     }
 }
 
-async function downloadDoc(token, vaultId, key) {
-    const urls = await presignGets(token, vaultId, [key]);
+async function downloadDoc(token, key) {
+    const urls = await presignGets(token, [key]);
     const downloadUrl = urls[0]?.downloadUrl;
 
     if (!downloadUrl) {
@@ -582,8 +522,8 @@ async function downloadDoc(token, vaultId, key) {
     return payload.doc || payload;
 }
 
-async function downloadBlob(token, vaultId, key, mimeType) {
-    const urls = await presignGets(token, vaultId, [key]);
+async function downloadBlob(token, key, mimeType) {
+    const urls = await presignGets(token, [key]);
     const downloadUrl = urls[0]?.downloadUrl;
 
     if (!downloadUrl) {
@@ -602,13 +542,13 @@ async function downloadBlob(token, vaultId, key, mimeType) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Vault creation, unlock, recovery
+// Vault creation, unlock, recovery (no vaultId returned)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function createPkbVault(token, userId, password) {
-    const existing = await listVaults(token, APP_ID);
+export async function createPkbVault(token, password) {
+    const existing = await getAppVault(token);
 
-    if (existing.length) {
+    if (existing) {
         throw new Error('A PKB vault already exists for this account.');
     }
 
@@ -628,7 +568,6 @@ export async function createPkbVault(token, userId, password) {
 
     const payload = {
         name: 'PKB',
-        appId: APP_ID,
         kdf: {
             algo: 'PBKDF2-SHA256',
             iterations: KDF_ITERATIONS,
@@ -639,30 +578,26 @@ export async function createPkbVault(token, userId, password) {
         verifier,
     };
 
-    const data = await vaultFetch('/vaults', {
+    await vaultFetch(`/apps/${APP_ID}/vault`, {
         method: 'POST',
         token,
         body: payload,
     });
 
-    const vault = data?.data;
-
-    if (!vault?.vaultId) {
-        throw new Error('Vault creation did not return a vault ID.');
-    }
-
-    setStoredVaultId(userId, vault.vaultId);
     await markUnsyncedDocsDirty();
 
     return {
-        vaultId: vault.vaultId,
         dek,
         recoveryKey,
     };
 }
 
-export async function unlockPkbVault(token, userId, password) {
-    const vault = await resolveVault(token, userId);
+export async function unlockPkbVault(token, password) {
+    const vault = await getAppVault(token);
+
+    if (!vault) {
+        throw new Error('No PKB vault found for this account.');
+    }
 
     const salt = base64ToBytes(vault.kdf.salt);
     const iterations = vault.kdf.iterations || KDF_ITERATIONS;
@@ -678,21 +613,21 @@ export async function unlockPkbVault(token, userId, password) {
         throw new Error('Wrong password or corrupt vault.');
     }
 
-    setStoredVaultId(userId, vault.vaultId);
-
     return {
-        vaultId: vault.vaultId,
         dek,
     };
 }
 
 export async function resetPasswordWithRecovery(
     token,
-    userId,
     recoveryKeyInput,
     newPassword
 ) {
-    const vault = await resolveVault(token, userId);
+    const vault = await getAppVault(token);
+
+    if (!vault) {
+        throw new Error('No PKB vault found for this account.');
+    }
 
     if (!vault.wrappedDekRecovery) {
         throw new Error('This vault does not have a recovery key configured.');
@@ -714,36 +649,39 @@ export async function resetPasswordWithRecovery(
     const wrappedDek = await wrapDek(dek, kek);
     const verifier = await createVerifier(kek);
 
-    await updateVault(token, vault.vaultId, {
-        kdf: {
-            algo: 'PBKDF2-SHA256',
-            iterations: KDF_ITERATIONS,
-            salt: bytesToBase64(salt),
+    await vaultFetch(`/apps/${APP_ID}/vault`, {
+        method: 'PATCH',
+        token,
+        body: {
+            kdf: {
+                algo: 'PBKDF2-SHA256',
+                iterations: KDF_ITERATIONS,
+                salt: bytesToBase64(salt),
+            },
+            wrappedDek,
+            verifier,
         },
-        wrappedDek,
-        verifier,
     });
 
-    setStoredVaultId(userId, vault.vaultId);
-
     return {
-        vaultId: vault.vaultId,
         dek,
     };
 }
 
-export async function regenerateRecoveryKey(token, userId, vaultId, dek) {
+export async function regenerateRecoveryKey(token, dek) {
     const recoveryKeyBytes = randomBytes(32);
     const recoveryKey = bytesToBase64Url(recoveryKeyBytes);
 
     const recoveryCryptoKey = await importRawAesKey(recoveryKeyBytes);
     const wrappedDekRecovery = await wrapDek(dek, recoveryCryptoKey);
 
-    await updateVault(token, vaultId, {
-        wrappedDekRecovery,
+    await vaultFetch(`/apps/${APP_ID}/vault`, {
+        method: 'PATCH',
+        token,
+        body: {
+            wrappedDekRecovery,
+        },
     });
-
-    setStoredVaultId(userId, vaultId);
 
     return recoveryKey;
 }
@@ -817,14 +755,13 @@ async function addConflictCopy(doc, label) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Sync engine
+// Sync engine (no vaultId)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function startPkbSync({ token, vaultId, dek, onStatus }) {
+export function startPkbSync({ token, dek, onStatus }) {
     stopPkbSync();
 
     engine.token = token;
-    engine.vaultId = vaultId;
     engine.dek = dek;
     engine.onStatus = onStatus || (() => {});
 
@@ -854,14 +791,13 @@ export function stopPkbSync() {
     }
 
     engine.token = null;
-    engine.vaultId = null;
     engine.dek = null;
     engine.syncing = false;
     engine.onStatus = () => {};
 }
 
 export function requestPkbSync(delayMs = 1500) {
-    if (!engine.token || !engine.vaultId || !engine.dek) {
+    if (!engine.token || !engine.dek) {
         return;
     }
 
@@ -877,7 +813,7 @@ export function requestPkbSync(delayMs = 1500) {
 }
 
 export async function syncNow() {
-    if (!engine.token || !engine.vaultId || !engine.dek || engine.syncing) {
+    if (!engine.token || !engine.dek || engine.syncing) {
         return;
     }
 
@@ -890,10 +826,7 @@ export async function syncNow() {
     try {
         setStatus('Sync: listing remote objects');
 
-        const remoteObjects = await listAllObjects(
-            engine.token,
-            engine.vaultId
-        );
+        const remoteObjects = await listAllObjects(engine.token);
 
         const remoteByKey = new Map(
             remoteObjects.map((item) => [item.key, item])
@@ -920,7 +853,7 @@ export async function syncNow() {
                 }
             }
 
-            await deleteRemoteKeys(engine.token, engine.vaultId, keysToDelete);
+            await deleteRemoteKeys(engine.token, keysToDelete);
             await db.docs.bulkDelete(tombstones.map((doc) => doc.id));
         }
 
@@ -948,7 +881,6 @@ export async function syncNow() {
                 try {
                     const remoteDoc = await downloadDoc(
                         engine.token,
-                        engine.vaultId,
                         remote.key
                     );
 
@@ -1001,11 +933,7 @@ export async function syncNow() {
             }
 
             const encryptedText = await encryptDocToText(engine.dek, doc);
-            const uploadUrl = await presignPut(
-                engine.token,
-                engine.vaultId,
-                key
-            );
+            const uploadUrl = await presignPut(engine.token, key);
 
             await uploadToPresignedUrl(
                 uploadUrl,
@@ -1034,7 +962,6 @@ export async function syncNow() {
 
                 const blobUploadUrl = await presignPut(
                     engine.token,
-                    engine.vaultId,
                     resourceBlobKey
                 );
 
@@ -1081,7 +1008,6 @@ export async function syncNow() {
 
             const remoteDoc = await downloadDoc(
                 engine.token,
-                engine.vaultId,
                 remote.key
             );
 
@@ -1136,7 +1062,6 @@ export async function syncNow() {
 
             const blob = await downloadBlob(
                 engine.token,
-                engine.vaultId,
                 remote.key,
                 local.mimeType
             );
