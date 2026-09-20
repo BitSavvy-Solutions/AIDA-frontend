@@ -15,6 +15,7 @@ import {
 } from 'react-icons/fi';
 
 import { useAuth } from '../contexts/AuthContext';
+import { migrateWidgetChatsToPkb , getChatsMigrationStatus} from '../services/migrateChatsToPkb';
 
 import {
     db,
@@ -43,6 +44,30 @@ const formatBytes = (bytes) => {
     }
 
     return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
+const chatPreview = (content) => {
+    if (!content) return '';
+
+    try {
+        const parsed = JSON.parse(content);
+
+        if (!parsed || parsed.schema !== 'aida/chat' || !Array.isArray(parsed.messages)) {
+            return content.slice(0, 90);
+        }
+
+        const messages = parsed.messages;
+        const firstUser = messages.find(
+            (message) => message.sender === 'user' && (message.text || '').trim()
+        );
+
+        const base = firstUser ? firstUser.text.trim() : 'Chat transcript';
+        const label = base.length > 70 ? `${base.slice(0, 67)}...` : base;
+
+        return `${label} (${messages.length} messages)`;
+    } catch {
+        return content.slice(0, 90);
+    }
 };
 
 const AttachmentPreview = ({ attachment, onOpen }) => {
@@ -128,6 +153,41 @@ const PkbPage = () => {
                 setVaultExists(false);
             });
     }, [isAuthenticated, apiToken]);
+
+    useEffect(() => {
+        window.migrateWidgetChatsToPkb = migrateWidgetChatsToPkb;
+        window.getChatsMigrationStatus = getChatsMigrationStatus;
+        window.pkbDb = db;
+
+        let cancelled = false;
+
+        const run = () =>
+            migrateWidgetChatsToPkb()
+                .then((result) => {
+                    if (cancelled) return;
+                    console.info('[chats-migration] result:', result);
+                    if (!result || result.skipped) return;
+
+                    setSyncStatus(
+                        `Migrated ${result.chats} chat(s): ` +
+                        `${result.resourcesCreated} new attachment(s), ` +
+                        `${result.resourcesReused} reused.`
+                    );
+
+                    requestPkbSync(1000);
+                })
+                .catch((error) => {
+                    console.error('[chats-migration] failed:', error);
+                });
+
+        run();
+        const id = setInterval(run, 60000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(id);
+        };
+    }, []);
 
     // Start / stop sync engine when dek is available
     useEffect(() => {
@@ -259,6 +319,7 @@ const PkbPage = () => {
             ...changes,
             modified: new Date().toISOString(),
             dirty: 1,
+            pkbEdited: 1,
         });
 
         requestPkbSync(2000);
@@ -726,7 +787,7 @@ const PkbPage = () => {
                             </div>
 
                             <div className="mt-1 truncate text-xs text-aida-text-muted">
-                                {(item.content || '').slice(0, 90)}
+                                {chatPreview(item.content)}
                             </div>
                         </button>
                     ))}
