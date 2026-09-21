@@ -120,12 +120,10 @@ const Header = () => {
             return;
         }
         logout();
-        navigate('/');
     };
 
     const handleSignedOut = () => {
         logout();
-        navigate('/');
     };
 
     const getBalanceColor = (amount) => {
