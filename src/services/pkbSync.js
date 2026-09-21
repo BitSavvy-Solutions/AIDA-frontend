@@ -1150,7 +1150,11 @@ export async function syncNow() {
         const remoteKeys = new Set(remoteObjects.map((item) => item.key));
 
         const missingLocally = finalDocs.filter((doc) => {
-            return doc.syncTime && !remoteKeys.has(docKey(doc.id));
+            return (
+                doc.syncTime &&
+                !remoteKeys.has(docKey(doc.id)) &&
+                !uploadedKeys.has(docKey(doc.id))
+            );
         });
 
         if (missingLocally.length) {
