@@ -1,24 +1,18 @@
 // src/pages/PkbPage.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-    FiPlus,
-    FiTag,
-    FiFile,
-    FiTrash2,
-    FiUpload,
-    FiLock,
-    FiRefreshCw,
-    FiDownload,
-    FiKey,
-    FiX,
+    FiSearch, FiChevronRight, FiCalendar, FiTag, FiX,
+    FiMessageSquare, FiClock, FiArrowUp, FiArrowDown,
+    FiFilter, FiRefreshCw, FiChevronDown, FiCheckSquare,
+    FiSquare, FiPlus, FiCheck, FiLoader, FiFile, FiEye,
+    FiTrash2, FiDownload, FiLock, FiKey,
 } from 'react-icons/fi';
 
 import { useAuth } from '../contexts/AuthContext';
-import { migrateWidgetChatsToPkb , getChatsMigrationStatus} from '../services/migrateChatsToPkb';
-
+import { migrateWidgetChatsToPkb, getChatsMigrationStatus } from '../services/migrateChatsToPkb';
 import {
-    db,
+    db as pkbDb,
     uid,
     getPkbVaultStatus,
     createPkbVault,
@@ -30,655 +24,1034 @@ import {
     syncNow,
 } from '../services/pkbSync';
 
-const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 B';
-    if (!bytes) return '';
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════════
 
+const PAGE_SIZE = 25;
+const EMPTY_TAGS = [];
+const EMPTY_MATCHES = [];
+const CONTEXT_WORDS = 6;
+const MAX_VISIBLE_MATCHES = 3;
+const MAX_MATCHES_PER_NOTE = 20;
+
+const getStartOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+const getEndOfDay = (date) => getStartOfDay(date) + 86400000;
+
+const getDateRangeFromPreset = (preset, customRange) => {
+    const now = new Date();
+    const todayStart = getStartOfDay(now);
+    switch (preset) {
+        case 'today': return { start: todayStart, end: getEndOfDay(now) };
+        case 'yesterday': return { start: todayStart - 86400000, end: todayStart };
+        case 'last7': return { start: todayStart - 7 * 86400000, end: getEndOfDay(now) };
+        case 'last30': return { start: todayStart - 30 * 86400000, end: getEndOfDay(now) };
+        case 'thisMonth': return { start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), end: getEndOfDay(now) };
+        case 'custom': return {
+            start: customRange.start ? getStartOfDay(new Date(customRange.start)) : null,
+            end: customRange.end ? getEndOfDay(new Date(customRange.end)) : null,
+        };
+        default: return { start: null, end: null };
+    }
+};
+
+const getRelativeDateGroup = (timestampMs) => {
+    const now = new Date();
+    const todayStart = getStartOfDay(now);
+    const yesterdayStart = todayStart - 86400000;
+    const weekStart = todayStart - 7 * 86400000;
+
+    if (timestampMs >= todayStart) return 'Today';
+    if (timestampMs >= yesterdayStart) return 'Yesterday';
+    if (timestampMs >= weekStart) return 'Past Week';
+
+    return new Date(timestampMs).toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric', year: 'numeric',
+    });
+};
+
+const formatRelativeTime = (ts) => {
+    if (!ts) return '';
+    const diff = Date.now() - new Date(ts).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days <= 30) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatBytes = (bytes) => {
+    if (!bytes) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB'];
     let value = bytes;
     let index = 0;
-
     while (value >= 1024 && index < units.length - 1) {
         value = value / 1024;
         index += 1;
     }
-
     return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
-const chatPreview = (content) => {
-    if (!content) return '';
-
+const parseNoteContent = (note) => {
     try {
-        const parsed = JSON.parse(content);
-
-        if (!parsed || parsed.schema !== 'aida/chat' || !Array.isArray(parsed.messages)) {
-            return content.slice(0, 90);
+        const parsed = JSON.parse(note.content || '{}');
+        if (parsed.schema === 'aida/chat' && Array.isArray(parsed.messages)) {
+            return { kind: 'chat', messages: parsed.messages };
         }
-
-        const messages = parsed.messages;
-        const firstUser = messages.find(
-            (message) => message.sender === 'user' && (message.text || '').trim()
-        );
-
-        const base = firstUser ? firstUser.text.trim() : 'Chat transcript';
-        const label = base.length > 70 ? `${base.slice(0, 67)}...` : base;
-
-        return `${label} (${messages.length} messages)`;
-    } catch {
-        return content.slice(0, 90);
-    }
+    } catch { /* not JSON */ }
+    return { kind: 'note', messages: [] };
 };
 
-const AttachmentPreview = ({ attachment, onOpen }) => {
-    const [url, setUrl] = useState('');
-
-    useEffect(() => {
-        if (!attachment?.blob) return;
-
-        const objectUrl = URL.createObjectURL(attachment.blob);
-        setUrl(objectUrl);
-
-        return () => {
-            setUrl('');
-            URL.revokeObjectURL(objectUrl);
-        };
-    }, [attachment?.id, attachment?.blob]);
-
-    if (!attachment?.mimeType?.startsWith('image/') || !url) {
-        return null;
+const noteLastActivity = (note) => {
+    let ts = new Date(note.modified || note.created || 0).getTime();
+    if (note.kind === 'note') {
+        const { messages } = parseNoteContent(note);
+        for (const m of messages) {
+            const t = new Date(m.timestamp || m.createdAt || m.time || 0).getTime();
+            if (Number.isFinite(t)) ts = Math.max(ts, t);
+        }
     }
+    return ts;
+};
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Search snippets
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const buildSnippet = (text, matchStart, matchLength) => {
+    const matchEnd = matchStart + matchLength;
+    const n = text.length;
+    let i = matchStart;
+    let count = 0;
+    while (i > 0 && count < CONTEXT_WORDS) {
+        while (i > 0 && text[i - 1] <= ' ') i--;
+        while (i > 0 && text[i - 1] > ' ') i--;
+        count++;
+    }
+    const start = i;
+    let j = matchEnd;
+    count = 0;
+    while (j < n && count < CONTEXT_WORDS) {
+        while (j < n && text[j] <= ' ') j++;
+        while (j < n && text[j] > ' ') j++;
+        count++;
+    }
+    const end = j;
+    return {
+        text: text.slice(start, end),
+        matchStart: matchStart - start,
+        matchEnd: matchEnd - start,
+        isStartTruncated: start > 0,
+        isEndTruncated: end < n,
+    };
+};
+
+const findMessageMatches = (note, query, lowerMessages) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return EMPTY_MATCHES;
+    const { messages } = parseNoteContent(note);
+    const results = [];
+    outer:
+    for (let idx = 0; idx < messages.length; idx++) {
+        const lower = lowerMessages[idx] || '';
+        if (!lower) continue;
+        const text = messages[idx].text || '';
+        let i = lower.indexOf(q);
+        while (i !== -1) {
+            results.push({
+                msgIndex: idx,
+                sender: messages[idx].sender,
+                snippet: buildSnippet(text, i, q.length),
+            });
+            if (results.length >= MAX_MATCHES_PER_NOTE) break outer;
+            i = lower.indexOf(q, i + q.length);
+        }
+    }
+    return results;
+};
+
+const HighlightedText = ({ text = '', query }) => {
+    const q = (query || '').trim();
+    if (!q) return text;
+    const lower = text.toLowerCase();
+    const lq = q.toLowerCase();
+    const parts = [];
+    let i = 0;
+    let k = 0;
+    while (i < text.length) {
+        const idx = lower.indexOf(lq, i);
+        if (idx === -1) { parts.push(text.slice(i)); break; }
+        if (idx > i) parts.push(text.slice(i, idx));
+        parts.push(
+            <mark key={k++} className="bg-aida-pink/25 text-aida-pink rounded px-0.5">
+                {text.slice(idx, idx + q.length)}
+            </mark>
+        );
+        i = idx + q.length;
+    }
+    return parts;
+};
+
+const MatchSnippet = ({ match }) => {
+    const { snippet, sender } = match;
+    const before = snippet.text.slice(0, snippet.matchStart);
+    const hit = snippet.text.slice(snippet.matchStart, snippet.matchEnd);
+    const after = snippet.text.slice(snippet.matchEnd);
     return (
-        <img
-            src={url}
-            alt={attachment.title}
-            onClick={onOpen}
-            className="h-24 w-24 cursor-pointer rounded-lg border border-aida-border object-cover"
-        />
+        <div className="flex items-start gap-2">
+            <span className={`flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${sender === 'user' ? 'bg-aida-pink/10 text-aida-pink' : 'bg-blue-500/10 text-blue-400'}`}>
+                {sender === 'user' ? 'You' : 'AIDA'}
+            </span>
+            <p className="text-xs text-aida-text-muted leading-relaxed min-w-0 break-words">
+                {snippet.isStartTruncated && <span className="text-aida-text-muted/50">... </span>}
+                {before}
+                <mark className="bg-aida-pink/25 text-aida-pink rounded px-0.5 font-medium">{hit}</mark>
+                {after}
+                {snippet.isEndTruncated && <span className="text-aida-text-muted/50"> ...</span>}
+            </p>
+        </div>
     );
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Note card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const NoteCard = React.memo(function NoteCard({
+    note,
+    tags,
+    matches,
+    hasQuery,
+    query,
+    selectionMode,
+    isSelected,
+    isExpanded,
+    onOpen,
+    onToggleSelected,
+    onEnterSelection,
+    onToggleMatches,
+}) {
+    const { kind, messages } = parseNoteContent(note);
+    const isChat = kind === 'chat';
+    const firstUser = isChat ? messages.find((m) => m.sender === 'user') : null;
+    const preview = firstUser?.text?.slice(0, 150) || (note.content || '').slice(0, 150);
+    const msgCount = messages.length;
+    const visibleMatches = isExpanded ? matches : matches.slice(0, MAX_VISIBLE_MATCHES);
+    const capped = matches.length >= MAX_MATCHES_PER_NOTE;
+
+    return (
+        <div
+            role="button"
+            tabIndex={0}
+            onClick={() => (selectionMode ? onToggleSelected(note.id) : onOpen(note))}
+            onKeyDown={(e) => { if (e.key === 'Enter') selectionMode ? onToggleSelected(note.id) : onOpen(note); }}
+            className={`w-full text-left p-4 rounded-xl border transition-all group cursor-pointer ${isSelected ? 'border-aida-pink/60 bg-aida-pink/5 shadow-sm' : 'border-aida-border bg-aida-card hover:border-aida-pink/30 hover:shadow-sm'}`}
+        >
+            <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            selectionMode ? onToggleSelected(note.id) : onEnterSelection(note.id);
+                        }}
+                        className="flex-shrink-0 mt-0.5 text-aida-text-muted hover:text-aida-pink transition-opacity opacity-100"
+                        aria-label={isSelected ? 'Deselect note' : 'Select note'}
+                    >
+                        {isSelected ? <FiCheckSquare className="w-4 h-4 text-aida-pink" /> : <FiSquare className="w-4 h-4" />}
+                    </button>
+
+                    <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-semibold text-aida-dark truncate">
+                            <HighlightedText text={note.title || 'Untitled'} query={query} />
+                        </h4>
+                        {!hasQuery && preview && (
+                            <p className="text-xs text-aida-text-muted mt-1.5 line-clamp-2 leading-relaxed">
+                                {preview}
+                            </p>
+                        )}
+
+                        {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                {tags.map((tag) => (
+                                    <span
+                                        key={tag.id}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-aida-light border border-aida-border text-aida-text-muted"
+                                    >
+                                        {tag.title}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <FiChevronRight className="w-4 h-4 text-aida-text-muted group-hover:text-aida-pink transition-colors flex-shrink-0 mt-1" />
+            </div>
+
+            {hasQuery && matches.length > 0 && (
+                <div className="mt-3 pl-3 border-l-2 border-aida-pink/30 space-y-2">
+                    {visibleMatches.map((m, i) => (
+                        <MatchSnippet key={`${m.msgIndex}-${i}`} match={m} />
+                    ))}
+                    {matches.length > MAX_VISIBLE_MATCHES && (
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onToggleMatches(note.id); }}
+                            className="text-[11px] font-medium text-aida-pink hover:underline"
+                        >
+                            {isExpanded ? 'Show fewer' : `Show all ${matches.length}${capped ? '+' : ''} matches`}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {hasQuery && matches.length === 0 && isChat && (
+                <p className="mt-2 text-[11px] italic text-aida-text-muted/70">Keyword found in the title</p>
+            )}
+
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-aida-text-muted/60">
+                <span className="flex items-center gap-1"><FiClock className="w-3 h-3" /> {formatRelativeTime(note.modified || note.created)}</span>
+                {isChat && <span>{msgCount} message{msgCount !== 1 ? 's' : ''}</span>}
+                {!isChat && note.resourceIds?.length > 0 && <span>{note.resourceIds.length} attachment{note.resourceIds.length !== 1 ? 's' : ''}</span>}
+                {hasQuery && matches.length > 0 && (
+                    <span className="text-aida-pink font-medium">{matches.length}{capped ? '+' : ''} match{matches.length !== 1 ? 'es' : ''}</span>
+                )}
+            </div>
+        </div>
+    );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Bulk tag modal
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const BulkTagModal = ({ isOpen, onClose, tags, selectedNoteIds, onApply, onCreate }) => {
+    const [checked, setChecked] = useState(() => new Set());
+    const [newName, setNewName] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) { setChecked(new Set()); setNewName(''); setBusy(false); }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const toggle = (id) => {
+        setChecked((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const alreadyCount = (tag) =>
+        selectedNoteIds.size === 0 ? 0 : 0; // simplified; we do not pre-compute per-tag coverage here
+
+    const handleApply = async () => {
+        if (checked.size === 0 || busy) return;
+        setBusy(true);
+        try { await onApply([...checked]); onClose(); } finally { setBusy(false); }
+    };
+
+    const handleCreate = async (e) => {
+        e.preventDefault();
+        const name = newName.trim();
+        if (!name || busy) return;
+        setBusy(true);
+        try {
+            const id = await onCreate(name);
+            setChecked((prev) => new Set(prev).add(id));
+            setNewName('');
+        } finally { setBusy(false); }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-aida-card rounded-xl shadow-2xl w-full max-w-sm border border-aida-border max-h-[90vh] overflow-y-auto my-auto">
+                <div className="flex items-center justify-between p-4 border-b border-aida-border">
+                    <h2 className="text-lg font-bold text-aida-dark flex items-center gap-2"><FiTag className="w-5 h-5 text-aida-pink" /> Add Tags</h2>
+                    <button onClick={onClose} className="text-aida-text-muted hover:text-aida-dark"><FiX className="w-5 h-5" /></button>
+                </div>
+                <div className="p-4 space-y-4">
+                    <p className="text-xs text-aida-text-muted">
+                        Tag {selectedNoteIds.size} selected item{selectedNoteIds.size !== 1 ? 's' : ''}.
+                    </p>
+                    <form onSubmit={handleCreate} className="flex items-center gap-2">
+                        <input
+                            type="text"
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            placeholder="Create a new tag..."
+                            className="flex-1 px-3 py-2 rounded-lg border border-aida-border bg-aida-light text-aida-dark text-sm placeholder:text-aida-text-muted/50"
+                        />
+                        <button type="submit" disabled={!newName.trim() || busy} className="p-2 rounded-lg bg-aida-pink text-white hover:opacity-90 disabled:opacity-40">
+                            <FiPlus className="w-4 h-4" />
+                        </button>
+                    </form>
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                        {tags.length === 0 && <p className="text-xs text-aida-text-muted text-center py-4">No tags yet. Create your first one above.</p>}
+                        {tags.map((tag) => {
+                            const isChecked = checked.has(tag.id);
+                            return (
+                                <button key={tag.id} type="button" onClick={() => toggle(tag.id)}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-sm transition-all ${isChecked ? 'border-aida-pink/50 bg-aida-pink/5' : 'border-aida-border hover:border-aida-text-muted/30 hover:bg-aida-light'}`}>
+                                    {isChecked ? <FiCheckSquare className="w-4 h-4 text-aida-pink flex-shrink-0" /> : <FiSquare className="w-4 h-4 text-aida-text-muted flex-shrink-0" />}
+                                    <span className="flex-1 text-left text-aida-dark truncate">{tag.title}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex gap-3 pt-1">
+                        <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-aida-border rounded-lg text-aida-dark text-sm font-medium hover:bg-aida-light">Cancel</button>
+                        <button onClick={handleApply} disabled={checked.size === 0 || busy} className="flex-1 px-4 py-2.5 bg-aida-pink text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                            {busy ? 'Applying...' : `Apply${checked.size > 0 ? ` (${checked.size})` : ''}`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Preview modal
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ResourcePreview = ({ resource }) => {
+    const [url, setUrl] = useState(null);
+
+    useEffect(() => {
+        if (!resource?.blob) return;
+        const objectUrl = URL.createObjectURL(resource.blob);
+        setUrl(objectUrl);
+        return () => URL.revokeObjectURL(objectUrl);
+    }, [resource?.id, resource?.blob]);
+
+    if (!resource) return null;
+
+    const download = () => {
+        if (!resource.blob) return;
+        const objectUrl = URL.createObjectURL(resource.blob);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = resource.title || 'download';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+    };
+
+    const isImage = resource.mimeType?.startsWith('image/');
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <FiFile className="w-6 h-6 text-aida-text-muted" />
+                    <div>
+                        <div className="font-medium text-aida-dark">{resource.title || 'Untitled'}</div>
+                        <div className="text-xs text-aida-text-muted">{resource.mimeType} • {formatBytes(resource.size)}</div>
+                    </div>
+                </div>
+                <button onClick={download} className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-1.5 text-sm text-aida-dark hover:bg-aida-light">
+                    <FiDownload className="w-4 h-4" /> Download
+                </button>
+            </div>
+            {isImage && url && (
+                <img src={url} alt={resource.title} className="max-w-full rounded-lg border border-aida-border" />
+            )}
+        </div>
+    );
+};
+
+const ChatMessage = ({ message, onOpenResource }) => {
+    const isUser = message.sender === 'user';
+    const { kind } = parseNoteContent({ content: '' }); // no-op, just to reuse helpers if needed
+
+    const attachments = []
+        .concat(message.images || [])
+        .concat(message.attachments || [])
+        .concat(message.files || [])
+        .concat(message.image ? [message.image] : [])
+        .concat(message.attachment ? [message.attachment] : []);
+
+    return (
+        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm ${isUser ? 'bg-aida-pink text-white rounded-br-md' : 'bg-aida-light border border-aida-border text-aida-dark rounded-bl-md'}`}>
+                {message.text && <div className="whitespace-pre-wrap">{message.text}</div>}
+
+                {message.reasoning && (
+                    <details className="mt-2">
+                        <summary className="text-[10px] opacity-70 cursor-pointer select-none">Reasoning</summary>
+                        <div className="mt-1 text-xs opacity-80 whitespace-pre-wrap border-t border-current/20 pt-2">{message.reasoning}</div>
+                    </details>
+                )}
+
+                {attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                        {attachments.map((att, i) => {
+                            if (!att?.resourceId) return (
+                                <span key={i} className="text-xs opacity-70 flex items-center gap-1"><FiFile className="w-3 h-3" /> {att.name}</span>
+                            );
+                            return (
+                                <button
+                                    key={i}
+                                    onClick={() => onOpenResource(att.resourceId)}
+                                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/10 hover:bg-black/20 text-xs transition-colors"
+                                >
+                                    <FiFile className="w-3 h-3" /> {att.name || 'Attachment'}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <div className={`mt-1 text-[10px] opacity-60 ${isUser ? 'text-right' : 'text-left'}`}>
+                    {new Date(message.timestamp || message.createdAt || message.time).toLocaleString()}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const PreviewModal = ({ note, resource, tags, onClose }) => {
+    const [activeResource, setActiveResource] = useState(null);
+
+    useEffect(() => {
+        setActiveResource(resource || null);
+    }, [resource]);
+
+    if (!note && !activeResource) return null;
+
+    const title = note?.title || activeResource?.title || 'Preview';
+    const { kind, messages } = note ? parseNoteContent(note) : { kind: 'resource', messages: [] };
+    const isChat = kind === 'chat';
+
+    const openResource = async (resourceId) => {
+        const doc = await pkbDb.docs.get(resourceId);
+        if (doc && !doc.deleted) setActiveResource(doc);
+    };
+
+    const backToNote = () => setActiveResource(null);
+
+    return (
+        <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-aida-border bg-aida-card shadow-2xl">
+                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-aida-border bg-aida-card p-4">
+                    <h2 className="text-lg font-bold text-aida-dark truncate pr-4">{title}</h2>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {activeResource && note && (
+                            <button onClick={backToNote} className="rounded-lg border border-aida-border px-3 py-1.5 text-sm text-aida-dark hover:bg-aida-light">Back</button>
+                        )}
+                        <button onClick={onClose} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"><FiX className="w-4 h-4" /></button>
+                    </div>
+                </div>
+
+                <div className="p-6">
+                    {activeResource ? (
+                        <ResourcePreview resource={activeResource} />
+                    ) : isChat ? (
+                        <div className="space-y-4">
+                            {messages.map((msg, i) => (
+                                <ChatMessage key={msg.id || i} message={msg} onOpenResource={openResource} />
+                            ))}
+                            {messages.length === 0 && <p className="text-sm text-aida-text-muted">No messages.</p>}
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {note.content && <div className="whitespace-pre-wrap text-sm text-aida-dark">{note.content}</div>}
+                            {note.resourceIds?.length > 0 && (
+                                <div className="space-y-2">
+                                    <h3 className="text-sm font-semibold text-aida-dark">Attachments</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        {note.resourceIds.map((id) => {
+                                            const tag = tags.find((t) => t.id === id);
+                                            return (
+                                                <button key={id} onClick={() => openResource(id)} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-aida-border text-sm text-aida-dark hover:bg-aida-light">
+                                                    <FiFile className="w-4 h-4" /> {tag?.title || id}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Main page
+// ═══════════════════════════════════════════════════════════════════════════════
 
 const PkbPage = () => {
     const { user, apiToken, isAuthenticated } = useAuth();
 
-    const [selectedTagId, setSelectedTagId] = useState('all');
-    const [selectedNoteId, setSelectedNoteId] = useState('');
-    const [newTagName, setNewTagName] = useState('');
-
     const [vaultExists, setVaultExists] = useState(false);
     const [dek, setDek] = useState(null);
-
     const [syncStatus, setSyncStatus] = useState('');
     const [syncError, setSyncError] = useState('');
     const [busy, setBusy] = useState(false);
 
     const [showSyncSetup, setShowSyncSetup] = useState(false);
     const [showRecoveryKey, setShowRecoveryKey] = useState(false);
-
     const [mode, setMode] = useState('create');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-
     const [recoveryInput, setRecoveryInput] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmNewPassword, setConfirmNewPassword] = useState('');
-
     const [recoveryKey, setRecoveryKey] = useState('');
     const [recoverySaved, setRecoverySaved] = useState(false);
 
-    // Clean up old vault-id localStorage keys (migration)
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const [selectedTagIds, setSelectedTagIds] = useState(() => new Set());
+    const [datePreset, setDatePreset] = useState('all');
+    const [customRange, setCustomRange] = useState({ start: '', end: '' });
+    const [sort, setSort] = useState('newest');
+    const [showFilters, setShowFilters] = useState(false);
+    const [showDateDropdown, setShowDateDropdown] = useState(false);
+
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedNoteIds, setSelectedNoteIds] = useState(() => new Set());
+    const [expandedMatches, setExpandedMatches] = useState(() => new Set());
+    const [tagModalOpen, setTagModalOpen] = useState(false);
+    const [previewNote, setPreviewNote] = useState(null);
+    const [toast, setToast] = useState(null);
+
+    const [page, setPage] = useState(1);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const sentinelRef = useRef(null);
+
+    // Vault status + migration + sync engine effects (same as before)
     useEffect(() => {
-        Object.keys(localStorage)
-            .filter((key) => key.startsWith('pkbVaultId:'))
-            .forEach((key) => {
-                localStorage.removeItem(key);
-            });
+        Object.keys(localStorage).filter((k) => k.startsWith('pkbVaultId:')).forEach((k) => localStorage.removeItem(k));
     }, []);
 
-    // Check if a PKB vault exists for this user
     useEffect(() => {
-        if (!isAuthenticated || !apiToken) {
-            setVaultExists(false);
-            setDek(null);
-            return;
-        }
-
-        getPkbVaultStatus(apiToken)
-            .then((exists) => {
-                setVaultExists(exists);
-            })
-            .catch((error) => {
-                console.error('PKB vault status check failed:', error);
-                setVaultExists(false);
-            });
+        if (!isAuthenticated || !apiToken) { setVaultExists(false); setDek(null); return; }
+        getPkbVaultStatus(apiToken).then(setVaultExists).catch(() => setVaultExists(false));
     }, [isAuthenticated, apiToken]);
 
     useEffect(() => {
         window.migrateWidgetChatsToPkb = migrateWidgetChatsToPkb;
         window.getChatsMigrationStatus = getChatsMigrationStatus;
-        window.pkbDb = db;
+        window.pkbDb = pkbDb;
 
         let cancelled = false;
-
-        const run = () =>
-            migrateWidgetChatsToPkb()
-                .then((result) => {
-                    if (cancelled) return;
-                    console.info('[chats-migration] result:', result);
-                    if (!result || result.skipped) return;
-
-                    setSyncStatus(
-                        `Migrated ${result.chats} chat(s): ` +
-                        `${result.resourcesCreated} new attachment(s), ` +
-                        `${result.resourcesReused} reused.`
-                    );
-
-                    requestPkbSync(1000);
-                })
-                .catch((error) => {
-                    console.error('[chats-migration] failed:', error);
-                });
+        const run = () => migrateWidgetChatsToPkb()
+            .then((result) => {
+                if (cancelled) return;
+                console.info('[chats-migration] result:', result);
+                if (!result || result.skipped) return;
+                setSyncStatus(`Migrated ${result.chats} chat(s): ${result.resourcesCreated} new attachment(s), ${result.resourcesReused} reused.`);
+                requestPkbSync(1000);
+            })
+            .catch((e) => console.error('[chats-migration] failed:', e));
 
         run();
         const id = setInterval(run, 60000);
-
-        return () => {
-            cancelled = true;
-            clearInterval(id);
-        };
+        return () => { cancelled = true; clearInterval(id); };
     }, []);
 
-    // Start / stop sync engine when dek is available
     useEffect(() => {
-        if (!isAuthenticated || !apiToken || !dek) {
-            return;
-        }
-
-        startPkbSync({
-            token: apiToken,
-            dek,
-            onStatus: setSyncStatus,
-        });
-
-        return () => {
-            stopPkbSync();
-        };
+        if (!isAuthenticated || !apiToken || !dek) return;
+        startPkbSync({ token: apiToken, dek, onStatus: setSyncStatus });
+        return () => stopPkbSync();
     }, [isAuthenticated, apiToken, dek]);
 
-    const tags =
-        useLiveQuery(() => {
-            return db.docs
-                .where('kind')
-                .equals('tag')
-                .and((tag) => !tag.deleted)
-                .sortBy('title');
-        }, []) || [];
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedQuery(searchQuery), 200);
+        return () => clearTimeout(t);
+    }, [searchQuery]);
 
-    const notes =
-        useLiveQuery(async () => {
-            const rows = await db.docs
-                .where('kind')
-                .equals('note')
-                .and((note) => !note.deleted)
-                .toArray();
-
-            const filtered =
-                selectedTagId === 'all'
-                    ? rows
-                    : rows.filter((note) =>
-                          (note.tagIds || []).includes(selectedTagId)
-                      );
-
-            return filtered.sort((a, b) =>
-                (b.modified || '').localeCompare(a.modified || '')
-            );
-        }, [selectedTagId]) || [];
-
-    const note = useLiveQuery(async () => {
-        if (!selectedNoteId) return undefined;
-        return db.docs.get(selectedNoteId);
-    }, [selectedNoteId]);
+    useEffect(() => { setPage(1); }, [debouncedQuery, selectedTagIds, datePreset, customRange, sort]);
 
     useEffect(() => {
-        if (note?.deleted) {
-            setSelectedNoteId('');
+        if (!toast) return;
+        const t = setTimeout(() => setToast(null), 3000);
+        return () => clearTimeout(t);
+    }, [toast]);
+
+    useEffect(() => {
+        if (!showDateDropdown) return;
+        const handler = (e) => { if (!e.target.closest('.date-dropdown')) setShowDateDropdown(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showDateDropdown]);
+
+    useEffect(() => {
+        setExpandedMatches(new Set());
+    }, [debouncedQuery]);
+
+
+    // Data
+    const rawNotes = useLiveQuery(() => pkbDb.docs.where('kind').equals('note').and((n) => !n.deleted).reverse().sortBy('modified'), []) || [];
+    const allTags = useLiveQuery(() => pkbDb.docs.where('kind').equals('tag').and((t) => !t.deleted).sortBy('title'), []) || [];
+
+    const tagById = useMemo(() => {
+        const map = new Map();
+        for (const tag of allTags) map.set(tag.id, tag);
+        return map;
+    }, [allTags]);
+
+    const searchIndex = useMemo(() => {
+        const map = {};
+        for (const note of rawNotes) {
+            const { kind, messages } = parseNoteContent(note);
+            const lowerMessages = kind === 'chat' ? messages.map((m) => (m.text || '').toLowerCase()) : [];
+            map[note.id] = {
+                lowerTitle: (note.title || '').toLowerCase(),
+                lowerMessages,
+                haystack: lowerMessages.join('\n'),
+            };
         }
-    }, [note?.deleted]);
+        return map;
+    }, [rawNotes]);
 
-    const resourceIdsKey = (note?.resourceIds || []).join(',');
+    const dateRange = useMemo(() => getDateRangeFromPreset(datePreset, customRange), [datePreset, customRange]);
 
-    const attachments =
-        useLiveQuery(async () => {
-            if (!resourceIdsKey) return [];
+    const filteredNotes = useMemo(() => {
+        let result = [...rawNotes];
 
-            const ids = resourceIdsKey.split(',');
-            const rows = await db.docs.where('id').anyOf(ids).toArray();
+        if (dateRange.start !== null) {
+            result = result.filter((n) => noteLastActivity(n) >= dateRange.start);
+        }
+        if (dateRange.end !== null) {
+            result = result.filter((n) => noteLastActivity(n) <= dateRange.end);
+        }
 
-            return rows.filter((row) => !row.deleted);
-        }, [resourceIdsKey]) || [];
+        if (selectedTagIds.size > 0) {
+            result = result.filter((n) => [...selectedTagIds].every((id) => (n.tagIds || []).includes(id)));
+        }
 
-    const createNote = async () => {
-        const now = new Date().toISOString();
-        const id = uid('note');
+        const q = debouncedQuery.trim().toLowerCase();
+        if (q) {
+            result = result.filter((n) => {
+                const idx = searchIndex[n.id];
+                if (!idx) return false;
+                return idx.lowerTitle.includes(q) || idx.haystack.includes(q);
+            });
+        }
 
-        await db.docs.add({
-            id,
-            kind: 'note',
-            title: 'Untitled note',
-            content: '',
-            tagIds: selectedTagId === 'all' ? [] : [selectedTagId],
-            resourceIds: [],
-            created: now,
-            modified: now,
-            dirty: 1,
-            deleted: 0,
+        return result.sort((a, b) => {
+            switch (sort) {
+                case 'oldest': return (a.modified || '').localeCompare(b.modified || '');
+                case 'mostMessages': {
+                    const ma = parseNoteContent(a).messages.length;
+                    const mb = parseNoteContent(b).messages.length;
+                    return mb - ma;
+                }
+                default: return (b.modified || '').localeCompare(a.modified || '');
+            }
         });
+    }, [rawNotes, dateRange, selectedTagIds, debouncedQuery, sort, searchIndex]);
 
-        setSelectedNoteId(id);
-        requestPkbSync(500);
-    };
+    const hasQuery = Boolean(debouncedQuery.trim());
 
-    const createTag = async () => {
-        const title = newTagName.trim();
-
-        if (!title) return;
-
-        const existing = tags.find(
-            (tag) => tag.title.toLowerCase() === title.toLowerCase()
-        );
-
-        if (existing) {
-            setSelectedTagId(existing.id);
-            setNewTagName('');
-            return;
+    const groupedNotes = useMemo(() => {
+        const groups = [];
+        const indexByLabel = {};
+        for (const note of filteredNotes) {
+            const label = getRelativeDateGroup(noteLastActivity(note));
+            let idx = indexByLabel[label];
+            if (idx === undefined) {
+                idx = groups.length;
+                indexByLabel[label] = idx;
+                groups.push({ label, notes: [] });
+            }
+            groups[idx].notes.push(note);
         }
+        return groups;
+    }, [filteredNotes]);
 
+    const paginatedGroups = useMemo(() => {
+        const maxNotes = page * PAGE_SIZE;
+        let shown = 0;
+        const result = [];
+        for (const group of groupedNotes) {
+            if (shown >= maxNotes) break;
+            const remaining = maxNotes - shown;
+            const visible = group.notes.slice(0, remaining);
+            if (visible.length) {
+                result.push({ ...group, notes: visible, total: group.notes.length });
+                shown += visible.length;
+            }
+        }
+        return result;
+    }, [groupedNotes, page]);
+
+    useEffect(() => { setIsLoadingMore(false); }, [paginatedGroups]);
+
+    const hasMore = filteredNotes.length > page * PAGE_SIZE;
+    const isSearching = searchQuery.trim() !== debouncedQuery.trim();
+    const isLoading = rawNotes === undefined;
+
+    useEffect(() => {
+        if (!hasMore || isLoadingMore) return;
+        const node = sentinelRef.current;
+        if (!node) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) { setIsLoadingMore(true); setPage((p) => p + 1); }
+        }, { rootMargin: '400px' });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [hasMore, isLoadingMore]);
+
+    const visibleNoteIds = useMemo(() => {
+        const ids = new Set();
+        paginatedGroups.forEach((g) => g.notes.forEach((n) => ids.add(n.id)));
+        return ids;
+    }, [paginatedGroups]);
+
+    const matchesMap = useMemo(() => {
+        if (!hasQuery) return {};
+        const map = {};
+        for (const note of filteredNotes) {
+            if (!visibleNoteIds.has(note.id)) continue;
+            map[note.id] = findMessageMatches(note, debouncedQuery, searchIndex[note.id]?.lowerMessages || EMPTY_MATCHES);
+        }
+        return map;
+    }, [filteredNotes, debouncedQuery, hasQuery, searchIndex, visibleNoteIds]);
+
+    // Prune selected ids that no longer exist
+    useEffect(() => {
+        setSelectedNoteIds((prev) => {
+            if (prev.size === 0) return prev;
+            const existing = new Set(rawNotes.map((n) => n.id));
+            const next = new Set([...prev].filter((id) => existing.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [rawNotes]);
+
+    // Escape exits selection
+    useEffect(() => {
+        if (!selectionMode) return;
+        const handler = (e) => { if (e.key === 'Escape') exitSelection(); };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [selectionMode]);
+
+    const toggleTag = useCallback((tagId) => {
+        setSelectedTagIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(tagId)) next.delete(tagId); else next.add(tagId);
+            return next;
+        });
+    }, []);
+
+    const clearAllFilters = useCallback(() => {
+        setSearchQuery('');
+        setDebouncedQuery('');
+        setSelectedTagIds(new Set());
+        setDatePreset('all');
+        setCustomRange({ start: '', end: '' });
+        setSort('newest');
+    }, []);
+
+    const toggleNoteSelected = useCallback((id) => {
+        setSelectedNoteIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    }, []);
+
+    const enterSelection = useCallback((id) => {
+        setSelectionMode(true);
+        setSelectedNoteIds(new Set([id]));
+    }, []);
+
+    const exitSelection = useCallback(() => {
+        setSelectionMode(false);
+        setSelectedNoteIds(new Set());
+    }, []);
+
+    const allFilteredSelected = filteredNotes.length > 0 && filteredNotes.every((n) => selectedNoteIds.has(n.id));
+
+    const toggleSelectAll = useCallback(() => {
+        setSelectedNoteIds((prev) => {
+            if (allFilteredSelected) {
+                const next = new Set(prev);
+                filteredNotes.forEach((n) => next.delete(n.id));
+                return next;
+            }
+            return new Set([...prev, ...filteredNotes.map((n) => n.id)]);
+        });
+    }, [allFilteredSelected, filteredNotes]);
+
+    const handleApplyTags = useCallback(async (tagIds) => {
+        const ids = [...selectedNoteIds];
+        if (ids.length === 0 || tagIds.length === 0) return;
         const now = new Date().toISOString();
-        const id = uid('tag');
+        await Promise.all(ids.map(async (noteId) => {
+            const note = await pkbDb.docs.get(noteId);
+            if (!note) return;
+            const current = new Set(note.tagIds || []);
+            tagIds.forEach((id) => current.add(id));
+            await pkbDb.docs.update(noteId, { tagIds: [...current], modified: now, dirty: 1 });
+        }));
+        setToast(`Added ${tagIds.length} tag${tagIds.length !== 1 ? 's' : ''} to ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
+        exitSelection();
+        requestPkbSync(500);
+    }, [selectedNoteIds, exitSelection]);
 
-        await db.docs.add({
+    const handleCreateTag = useCallback(async (name) => {
+        const id = uid('tag');
+        const now = new Date().toISOString();
+        await pkbDb.docs.add({
             id,
             kind: 'tag',
-            title,
+            title: name,
             created: now,
             modified: now,
             dirty: 1,
             deleted: 0,
         });
-
-        setSelectedTagId(id);
-        setNewTagName('');
         requestPkbSync(500);
-    };
+        return id;
+    }, []);
 
-    const updateNote = async (changes) => {
-        if (!note) return;
-
-        await db.docs.update(note.id, {
-            ...changes,
-            modified: new Date().toISOString(),
-            dirty: 1,
-            pkbEdited: 1,
-        });
-
-        requestPkbSync(2000);
-    };
-
-    const toggleTagOnNote = async (tagId) => {
-        if (!note) return;
-
-        const current = new Set(note.tagIds || []);
-
-        if (current.has(tagId)) {
-            current.delete(tagId);
-        } else {
-            current.add(tagId);
-        }
-
-        await updateNote({
-            tagIds: Array.from(current),
-        });
-    };
-
-    const deleteNote = async () => {
-        if (!note) return;
-
-        const confirmed = window.confirm(
-            'Delete this note? Attached files will also be removed if they are not used by other notes.'
-        );
-
+    const handleDeleteSelected = useCallback(async () => {
+        const ids = [...selectedNoteIds];
+        if (ids.length === 0) return;
+        const confirmed = window.confirm(`Delete ${ids.length} selected item${ids.length !== 1 ? 's' : ''}? Attached files will be removed if unused.`);
         if (!confirmed) return;
 
         const now = new Date().toISOString();
+        const allNotes = await pkbDb.docs.where('kind').equals('note').toArray();
 
-        await db.docs.update(note.id, {
-            deleted: 1,
-            dirty: 1,
-            modified: now,
-        });
+        for (const id of ids) {
+            const note = await pkbDb.docs.get(id);
+            if (!note) continue;
 
-        const allNotes = await db.docs
-            .where('kind')
-            .equals('note')
-            .toArray();
+            await pkbDb.docs.update(id, { deleted: 1, dirty: 1, modified: now });
 
-        const orphanResourceIds = (note.resourceIds || []).filter(
-            (resourceId) => {
-                return !allNotes.some((item) => {
-                    return (
-                        item.id !== note.id &&
-                        !item.deleted &&
-                        (item.resourceIds || []).includes(resourceId)
-                    );
-                });
+            const orphanIds = (note.resourceIds || []).filter((resourceId) => {
+                return !allNotes.some((item) => item.id !== id && !item.deleted && (item.resourceIds || []).includes(resourceId));
+            });
+
+            for (const rid of orphanIds) {
+                await pkbDb.docs.update(rid, { deleted: 1, dirty: 1, modified: now });
             }
-        );
-
-        for (const resourceId of orphanResourceIds) {
-            await db.docs.update(resourceId, {
-                deleted: 1,
-                dirty: 1,
-                modified: now,
-            });
         }
 
-        setSelectedNoteId('');
+        setToast(`Deleted ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
+        exitSelection();
         requestPkbSync(500);
-    };
+    }, [selectedNoteIds, exitSelection]);
 
-    const attachFile = async (event) => {
-        const file = event.target.files && event.target.files[0];
+    const openPreview = useCallback((note) => {
+        setPreviewNote(note);
+    }, []);
 
-        if (!file || !note) return;
-
-        const now = new Date().toISOString();
-        const id = uid('res');
-
-        await db.docs.add({
-            id,
-            kind: 'resource',
-            title: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            size: file.size,
-            blob: file,
-            created: now,
-            modified: now,
-            dirty: 1,
-            deleted: 0,
-            blobDirty: 1,
+    const toggleMatchesExpanded = useCallback((id) => {
+        setExpandedMatches((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
         });
+    }, []);
 
-        await updateNote({
-            resourceIds: [...(note.resourceIds || []), id],
-        });
+    const hasActiveFilters = searchQuery || selectedTagIds.size > 0 || datePreset !== 'all';
 
-        event.target.value = '';
-        requestPkbSync(500);
-    };
+    const datePresets = [
+        { value: 'all', label: 'All time' }, { value: 'today', label: 'Today' },
+        { value: 'yesterday', label: 'Yesterday' }, { value: 'last7', label: 'Last 7 days' },
+        { value: 'last30', label: 'Last 30 days' }, { value: 'thisMonth', label: 'This month' },
+        { value: 'custom', label: 'Custom range' },
+    ];
 
-    const removeAttachment = async (resourceId) => {
-        if (!note) return;
+    const sortOptions = [
+        { value: 'newest', label: 'Newest first' },
+        { value: 'oldest', label: 'Oldest first' },
+        { value: 'mostMessages', label: 'Most messages' },
+    ];
 
-        const confirmed = window.confirm(
-            'Remove this attachment? It will be deleted if no other note uses it.'
-        );
-
-        if (!confirmed) return;
-
-        const remainingResourceIds = (note.resourceIds || []).filter(
-            (id) => id !== resourceId
-        );
-
-        await updateNote({
-            resourceIds: remainingResourceIds,
-        });
-
-        const allNotes = await db.docs
-            .where('kind')
-            .equals('note')
-            .toArray();
-
-        const stillUsed = allNotes.some((item) => {
-            return (
-                item.id !== note.id &&
-                !item.deleted &&
-                (item.resourceIds || []).includes(resourceId)
-            );
-        });
-
-        if (!stillUsed) {
-            await db.docs.update(resourceId, {
-                deleted: 1,
-                dirty: 1,
-                modified: new Date().toISOString(),
-            });
-        }
-
-        requestPkbSync(500);
-    };
-
-    const openAttachment = (attachment) => {
-        if (!attachment?.blob) return;
-
-        const url = URL.createObjectURL(attachment.blob);
-        window.open(url, '_blank', 'noopener');
-
-        setTimeout(() => {
-            URL.revokeObjectURL(url);
-        }, 60000);
-    };
-
+    // Sync UI handlers (same as before)
     const openSyncSetup = () => {
-        setSyncError('');
-        setPassword('');
-        setConfirmPassword('');
-        setRecoveryInput('');
-        setNewPassword('');
-        setConfirmNewPassword('');
+        setSyncError(''); setPassword(''); setConfirmPassword('');
+        setRecoveryInput(''); setNewPassword(''); setConfirmNewPassword('');
         setMode(vaultExists ? 'unlock' : 'create');
         setShowSyncSetup(true);
     };
 
     const handleCreateVault = async () => {
-        setSyncError('');
-
-        if (password.length < 8) {
-            setSyncError('Password must be at least 8 characters.');
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            setSyncError('Passwords do not match.');
-            return;
-        }
-
+        if (password.length < 8) { setSyncError('Password must be at least 8 characters.'); return; }
+        if (password !== confirmPassword) { setSyncError('Passwords do not match.'); return; }
         setBusy(true);
-
         try {
             const result = await createPkbVault(apiToken, password);
-
-            setDek(result.dek);
-            setVaultExists(true);
-            setRecoveryKey(result.recoveryKey);
-
-            setShowSyncSetup(false);
-            setShowRecoveryKey(true);
-        } catch (error) {
-            setSyncError(error.message);
-        } finally {
-            setBusy(false);
-        }
+            setDek(result.dek); setVaultExists(true); setRecoveryKey(result.recoveryKey);
+            setShowSyncSetup(false); setShowRecoveryKey(true);
+        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
     };
 
     const handleUnlock = async () => {
-        setSyncError('');
-
-        if (!password) {
-            setSyncError('Please enter your password.');
-            return;
-        }
-
+        if (!password) { setSyncError('Please enter your password.'); return; }
         setBusy(true);
-
         try {
             const result = await unlockPkbVault(apiToken, password);
-
-            setDek(result.dek);
-
-            setPassword('');
-            setShowSyncSetup(false);
-        } catch (error) {
-            setSyncError(error.message);
-        } finally {
-            setBusy(false);
-        }
+            setDek(result.dek); setPassword(''); setShowSyncSetup(false);
+        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
     };
 
     const handleRecoveryReset = async () => {
-        setSyncError('');
-
-        if (!recoveryInput.trim()) {
-            setSyncError('Please enter your recovery key.');
-            return;
-        }
-
-        if (newPassword.length < 8) {
-            setSyncError('New password must be at least 8 characters.');
-            return;
-        }
-
-        if (newPassword !== confirmNewPassword) {
-            setSyncError('New passwords do not match.');
-            return;
-        }
-
+        if (!recoveryInput.trim()) { setSyncError('Please enter your recovery key.'); return; }
+        if (newPassword.length < 8) { setSyncError('New password must be at least 8 characters.'); return; }
+        if (newPassword !== confirmNewPassword) { setSyncError('New passwords do not match.'); return; }
         setBusy(true);
-
         try {
-            const result = await resetPasswordWithRecovery(
-                apiToken,
-                recoveryInput,
-                newPassword
-            );
-
+            const result = await resetPasswordWithRecovery(apiToken, recoveryInput, newPassword);
             setDek(result.dek);
-
-            setRecoveryInput('');
-            setNewPassword('');
-            setConfirmNewPassword('');
-            setShowSyncSetup(false);
-
+            setRecoveryInput(''); setNewPassword(''); setConfirmNewPassword(''); setShowSyncSetup(false);
             setSyncStatus('Password reset complete. Sync unlocked.');
-        } catch (error) {
-            setSyncError(error.message);
-        } finally {
-            setBusy(false);
-        }
+        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
     };
 
+    const lockSync = () => { stopPkbSync(); setDek(null); setSyncStatus('Sync locked.'); };
+
     const copyRecoveryKey = async () => {
-        try {
-            await navigator.clipboard.writeText(recoveryKey);
-        } catch (error) {
-            console.error('Could not copy recovery key:', error);
-        }
+        try { await navigator.clipboard.writeText(recoveryKey); } catch (e) { console.error(e); }
     };
 
     const downloadRecoveryKey = () => {
-        const content = [
-            'PKB recovery key',
-            '',
-            'Keep this key somewhere safe. It can reset your PKB sync password if you forget it.',
-            '',
-            recoveryKey,
-            '',
-        ].join('\n');
-
+        const content = ['PKB recovery key', '', 'Keep this key somewhere safe.', '', recoveryKey, ''].join('\n');
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
-
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = 'pkb-recovery-key.txt';
-        anchor.click();
-
-        setTimeout(() => {
-            URL.revokeObjectURL(url);
-        }, 5000);
-    };
-
-    const lockSync = () => {
-        stopPkbSync();
-        setDek(null);
-        setSyncStatus('Sync locked.');
+        const a = document.createElement('a');
+        a.href = url; a.download = 'pkb-recovery-key.txt'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
 
     return (
-        <div className="bg-aida-light min-h-screen">
+        <div className="min-h-screen bg-aida-light">
+            {/* Header */}
             <div className="border-b border-aida-border bg-aida-card px-4 py-3">
-                <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+                <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-lg font-bold text-aida-dark">
-                            PKB
-                        </h1>
+                        <h1 className="text-lg font-bold text-aida-dark">Personal Knowledge Base</h1>
                         <p className="text-xs text-aida-text-muted">
-                            Notes, tags, and attachments. Encrypted sync can be
-                            enabled with your password.
+                            {filteredNotes.length} item{filteredNotes.length !== 1 ? 's' : ''}
+                            {rawNotes.length !== filteredNotes.length && ` of ${rawNotes.length}`}
+                            {isAuthenticated && ' • encrypted sync available'}
                         </p>
                     </div>
-
                     <div className="flex flex-wrap items-center gap-2">
-                        {syncStatus && (
-                            <span className="rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
-                                {syncStatus}
-                            </span>
-                        )}
-
-                        {!isAuthenticated && (
-                            <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
-                                <FiLock />
-                                <span>Log in to enable encrypted sync</span>
-                            </div>
-                        )}
-
-                        {isAuthenticated && !vaultExists && (
-                            <button
-                                onClick={openSyncSetup}
-                                className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                            >
-                                <FiKey />
-                                Enable encrypted sync
-                            </button>
-                        )}
-
-                        {isAuthenticated && vaultExists && !dek && (
-                            <button
-                                onClick={openSyncSetup}
-                                className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                            >
-                                <FiLock />
-                                Unlock sync
-                            </button>
-                        )}
-
+                        {syncStatus && <span className="rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">{syncStatus}</span>}
+                        {!isAuthenticated && <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted"><FiLock /><span>Log in to enable encrypted sync</span></div>}
+                        {isAuthenticated && !vaultExists && <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"><FiKey /> Enable encrypted sync</button>}
+                        {isAuthenticated && vaultExists && !dek && <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"><FiLock /> Unlock sync</button>}
                         {dek && (
                             <>
-                                <button
-                                    onClick={() => syncNow()}
-                                    className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"
-                                >
-                                    <FiRefreshCw />
-                                    Sync now
-                                </button>
-
-                                <button
-                                    onClick={lockSync}
-                                    className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"
-                                >
-                                    <FiLock />
-                                    Lock
-                                </button>
+                                <button onClick={() => syncNow()} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"><FiRefreshCw /> Sync now</button>
+                                <button onClick={lockSync} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"><FiLock /> Lock</button>
                             </>
                         )}
                     </div>
@@ -686,278 +1059,227 @@ const PkbPage = () => {
             </div>
 
             {syncError && (
-                <div className="mx-auto max-w-7xl px-4 pt-4">
-                    <div className="rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">
-                        {syncError}
+                <div className="mx-auto max-w-6xl px-4 pt-4">
+                    <div className="rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">{syncError}</div>
+                </div>
+            )}
+
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+                {/* Search & controls */}
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-aida-text-muted" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search notes and chat history..."
+                            className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-aida-border bg-aida-card text-aida-dark text-sm focus:ring-2 focus:ring-aida-pink/30 focus:border-aida-pink/50 placeholder:text-aida-text-muted/50"
+                        />
+                        {isSearching ? (
+                            <FiLoader className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-aida-pink animate-spin" />
+                        ) : searchQuery ? (
+                            <button onClick={() => { setSearchQuery(''); setDebouncedQuery(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-aida-text-muted hover:text-aida-dark"><FiX className="w-4 h-4" /></button>
+                        ) : null}
+                    </div>
+
+                    <div className="relative">
+                        <select value={sort} onChange={(e) => setSort(e.target.value)} className="appearance-none pl-3 pr-8 py-2.5 rounded-xl border border-aida-border bg-aida-card text-aida-dark text-sm cursor-pointer focus:ring-2 focus:ring-aida-pink/30">
+                            {sortOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                        <FiChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-aida-text-muted pointer-events-none" />
+                    </div>
+
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${showFilters || hasActiveFilters ? 'border-aida-pink/50 bg-aida-pink/10 text-aida-pink' : 'border-aida-border bg-aida-card text-aida-text-muted hover:text-aida-dark'}`}
+                    >
+                        <FiFilter className="w-4 h-4" />
+                        <span className="hidden sm:inline">Filters</span>
+                        {hasActiveFilters && <span className="w-5 h-5 rounded-full bg-aida-pink text-white text-xs flex items-center justify-center">{selectedTagIds.size + (datePreset !== 'all' ? 1 : 0) + (searchQuery ? 1 : 0)}</span>}
+                    </button>
+
+                    <button
+                        onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+                        className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${selectionMode ? 'border-aida-pink/50 bg-aida-pink/10 text-aida-pink' : 'border-aida-border bg-aida-card text-aida-text-muted hover:text-aida-dark'}`}
+                    >
+                        <FiCheckSquare className="w-4 h-4" />
+                        <span className="hidden sm:inline">{selectionMode ? 'Done' : 'Select'}</span>
+                    </button>
+                </div>
+
+                {/* Filter panel */}
+                {showFilters && (
+                    <div className="p-4 rounded-xl border border-aida-border bg-aida-card space-y-4">
+                        <div>
+                            <div className="flex items-center gap-2 mb-3"><FiCalendar className="w-4 h-4 text-aida-text-muted" /><span className="text-sm font-semibold text-aida-dark">Date Range</span></div>
+                            <div className="flex flex-wrap gap-2">
+                                {datePresets.map((preset) => (
+                                    <button key={preset.value} onClick={() => setDatePreset(preset.value)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${datePreset === preset.value ? 'border-aida-pink/50 bg-aida-pink/10 text-aida-pink' : 'border-aida-border text-aida-text-muted hover:text-aida-dark hover:border-aida-text-muted/30'}`}>
+                                        {preset.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {datePreset === 'custom' && (
+                                <div className="flex items-center gap-2 mt-3">
+                                    <input type="date" value={customRange.start} onChange={(e) => setCustomRange((r) => ({ ...r, start: e.target.value }))} className="px-3 py-1.5 rounded-lg border border-aida-border bg-aida-light text-aida-dark text-xs dark:[color-scheme:dark]" />
+                                    <span className="text-aida-text-muted text-xs">to</span>
+                                    <input type="date" value={customRange.end} onChange={(e) => setCustomRange((r) => ({ ...r, end: e.target.value }))} className="px-3 py-1.5 rounded-lg border border-aida-border bg-aida-light text-aida-dark text-xs dark:[color-scheme:dark]" />
+                                </div>
+                            )}
+                        </div>
+
+                        {allTags.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 mb-3"><FiTag className="w-4 h-4 text-aida-text-muted" /><span className="text-sm font-semibold text-aida-dark">Tags</span></div>
+                                <div className="flex flex-wrap gap-2">
+                                    {allTags.map((tag) => {
+                                        const selected = selectedTagIds.has(tag.id);
+                                        return (
+                                            <button key={tag.id} onClick={() => toggleTag(tag.id)}
+                                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${selected ? 'border-aida-pink/50 bg-aida-pink/10 text-aida-pink' : 'border-aida-border text-aida-text-muted hover:text-aida-dark hover:border-aida-text-muted/30'}`}>
+                                                {tag.title}
+                                                {selected && <FiX className="w-3 h-3" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {hasActiveFilters && (
+                            <button onClick={clearAllFilters} className="flex items-center gap-1.5 text-xs text-aida-text-muted hover:text-aida-pink transition-colors">
+                                <FiRefreshCw className="w-3 h-3" /> Clear all filters
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Active chips */}
+                {!showFilters && hasActiveFilters && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {datePreset !== 'all' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-aida-pink/10 border border-aida-pink/20 text-aida-pink text-xs font-medium">
+                                <FiCalendar className="w-3 h-3" /> {datePresets.find((p) => p.value === datePreset)?.label}
+                                <button onClick={() => setDatePreset('all')}><FiX className="w-3 h-3" /></button>
+                            </span>
+                        )}
+                        {[...selectedTagIds].map((tagId) => {
+                            const tag = tagById.get(tagId);
+                            if (!tag) return null;
+                            return (
+                                <span key={tagId} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-aida-border bg-aida-light text-aida-text-muted">
+                                    {tag.title}
+                                    <button onClick={() => toggleTag(tagId)}><FiX className="w-3 h-3" /></button>
+                                </span>
+                            );
+                        })}
+                        <button onClick={clearAllFilters} className="text-xs text-aida-text-muted hover:text-aida-pink transition-colors ml-1">Clear all</button>
+                    </div>
+                )}
+
+                {/* List */}
+                {isLoading ? (
+                    <div className="text-center py-20">
+                        <FiLoader className="mx-auto w-12 h-12 text-aida-pink animate-spin mb-4" />
+                        <h3 className="text-lg font-semibold text-aida-dark">Loading...</h3>
+                    </div>
+                ) : rawNotes.length === 0 ? (
+                    <div className="text-center py-20">
+                        <FiMessageSquare className="mx-auto w-12 h-12 text-aida-text-muted mb-4 opacity-20" />
+                        <h3 className="text-lg font-semibold text-aida-dark mb-2">No notes yet</h3>
+                        <p className="text-sm text-aida-text-muted max-w-sm mx-auto">Chat history will appear here after migration.</p>
+                    </div>
+                ) : filteredNotes.length === 0 && !isSearching ? (
+                    <div className="text-center py-20">
+                        <FiSearch className="mx-auto w-12 h-12 text-aida-text-muted mb-4 opacity-20" />
+                        <h3 className="text-lg font-semibold text-aida-dark mb-2">No matches found</h3>
+                        <button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-5 py-2.5 border border-aida-border text-aida-dark text-sm font-medium rounded-xl hover:bg-aida-card"><FiRefreshCw className="w-4 h-4" /> Reset filters</button>
+                    </div>
+                ) : (
+                    <div className="space-y-8">
+                        {paginatedGroups.map((group) => (
+                            <div key={group.label}>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-aida-text-muted mb-3 px-1">
+                                    {group.label} <span className="ml-2 font-normal normal-case text-aida-text-muted/50">({group.total})</span>
+                                </h3>
+                                <div className="space-y-2">
+                                    {group.notes.map((note) => (
+                                        <NoteCard
+                                            key={note.id}
+                                            note={note}
+                                            tags={(note.tagIds || []).map((id) => tagById.get(id)).filter(Boolean)}
+                                            matches={matchesMap[note.id] || EMPTY_MATCHES}
+                                            hasQuery={hasQuery}
+                                            query={debouncedQuery}
+                                            selectionMode={selectionMode}
+                                            isSelected={selectedNoteIds.has(note.id)}
+                                            isExpanded={expandedMatches.has(note.id)}
+                                            onOpen={openPreview}
+                                            onToggleSelected={toggleNoteSelected}
+                                            onEnterSelection={enterSelection}
+                                            onToggleMatches={toggleMatchesExpanded}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        {hasMore && (
+                            <div ref={sentinelRef} className="py-4 flex justify-center">
+                                <div className="flex items-center gap-2 text-sm text-aida-text-muted"><FiLoader className="w-4 h-4 animate-spin text-aida-pink" /> Loading more...</div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div className={selectionMode ? 'h-24' : 'h-8'} />
+            </div>
+
+            {/* Modals */}
+            <BulkTagModal
+                isOpen={tagModalOpen}
+                onClose={() => setTagModalOpen(false)}
+                tags={allTags}
+                selectedNoteIds={selectedNoteIds}
+                onApply={handleApplyTags}
+                onCreate={handleCreateTag}
+            />
+
+            {previewNote && (
+                <PreviewModal
+                    note={previewNote}
+                    tags={allTags}
+                    onClose={() => setPreviewNote(null)}
+                />
+            )}
+
+            {selectionMode && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1500] w-max max-w-[calc(100vw-2rem)]">
+                    <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-aida-card border border-aida-border shadow-2xl">
+                        <span className="text-sm font-semibold text-aida-dark px-1">{selectedNoteIds.size} selected</span>
+                        <div className="hidden sm:block w-px h-5 bg-aida-border" />
+                        <button onClick={toggleSelectAll} className="px-3 py-1.5 text-xs font-medium text-aida-text-muted hover:text-aida-dark rounded-lg hover:bg-aida-light">
+                            {allFilteredSelected ? 'Deselect all' : `Select all ${filteredNotes.length}`}
+                        </button>
+                        <button onClick={() => setTagModalOpen(true)} disabled={selectedNoteIds.size === 0} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-aida-pink text-white text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-40">
+                            <FiTag className="w-3.5 h-3.5" /> Add tags
+                        </button>
+                        <button onClick={handleDeleteSelected} disabled={selectedNoteIds.size === 0} className="inline-flex items-center gap-1.5 px-4 py-1.5 border border-red-400 text-red-400 text-xs font-semibold rounded-lg hover:bg-red-400/10 disabled:opacity-40">
+                            <FiTrash2 className="w-3.5 h-3.5" /> Delete
+                        </button>
+                        <button onClick={exitSelection} className="p-1.5 text-aida-text-muted hover:text-aida-dark rounded-lg hover:bg-aida-light" title="Exit selection"><FiX className="w-4 h-4" /></button>
                     </div>
                 </div>
             )}
 
-            <div
-                className="mx-auto flex max-w-7xl gap-4 p-4"
-                style={{ height: 'calc(100vh - 130px)' }}
-            >
-                <aside className="w-64 flex-shrink-0 overflow-y-auto rounded-2xl border border-aida-border bg-aida-card p-4">
-                    <button
-                        onClick={createNote}
-                        className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                    >
-                        <FiPlus />
-                        New note
-                    </button>
-
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-aida-text-muted">
-                        <FiTag />
-                        Tags
+            {toast && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[2500]">
+                    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-aida-dark text-aida-light text-sm font-medium shadow-2xl">
+                        <FiCheck className="w-4 h-4 text-green-400" /> {toast}
                     </div>
-
-                    <button
-                        onClick={() => setSelectedTagId('all')}
-                        className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${
-                            selectedTagId === 'all'
-                                ? 'bg-aida-pink/10 text-aida-pink'
-                                : 'text-aida-text-muted hover:bg-aida-light'
-                        }`}
-                    >
-                        All notes
-                    </button>
-
-                    {tags.map((tag) => (
-                        <button
-                            key={tag.id}
-                            onClick={() => setSelectedTagId(tag.id)}
-                            className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${
-                                selectedTagId === tag.id
-                                    ? 'bg-aida-pink/10 text-aida-pink'
-                                    : 'text-aida-text-muted hover:bg-aida-light'
-                            }`}
-                        >
-                            {tag.title}
-                        </button>
-                    ))}
-
-                    <div className="mt-3 space-y-2">
-                        <input
-                            value={newTagName}
-                            onChange={(event) =>
-                                setNewTagName(event.target.value)
-                            }
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    createTag();
-                                }
-                            }}
-                            placeholder="New tag"
-                            className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                        />
-
-                        <button
-                            onClick={createTag}
-                            className="w-full rounded-lg border border-aida-border px-3 py-2 text-sm text-aida-dark hover:bg-aida-light"
-                        >
-                            Add tag
-                        </button>
-                    </div>
-                </aside>
-
-                <section className="w-80 flex-shrink-0 overflow-y-auto rounded-2xl border border-aida-border bg-aida-card p-4">
-                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-aida-text-muted">
-                        Notes
-                    </div>
-
-                    {notes.length === 0 && (
-                        <div className="text-sm text-aida-text-muted">
-                            No notes yet. Create your first note.
-                        </div>
-                    )}
-
-                    {notes.map((item) => (
-                        <button
-                            key={item.id}
-                            onClick={() => setSelectedNoteId(item.id)}
-                            className={`mb-2 w-full rounded-xl border px-4 py-3 text-left ${
-                                selectedNoteId === item.id
-                                    ? 'border-aida-pink/40 bg-aida-pink/10'
-                                    : 'border-aida-border hover:bg-aida-light'
-                            }`}
-                        >
-                            <div className="truncate text-sm font-semibold text-aida-dark">
-                                {item.title || 'Untitled note'}
-                            </div>
-
-                            <div className="mt-1 truncate text-xs text-aida-text-muted">
-                                {chatPreview(item.content)}
-                            </div>
-                        </button>
-                    ))}
-                </section>
-
-                <section className="flex-1 overflow-y-auto rounded-2xl border border-aida-border bg-aida-card p-4">
-                    {!note || note.deleted ? (
-                        <div className="flex h-full items-center justify-center text-sm text-aida-text-muted">
-                            Select a note or create a new note.
-                        </div>
-                    ) : (
-                        <div className="flex h-full flex-col">
-                            <div className="mb-4 flex items-center justify-between gap-4">
-                                <input
-                                    value={note.title || ''}
-                                    onChange={(event) =>
-                                        updateNote({
-                                            title: event.target.value,
-                                        })
-                                    }
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-lg font-semibold text-aida-dark"
-                                />
-
-                                <button
-                                    onClick={deleteNote}
-                                    className="flex items-center gap-2 rounded-lg border border-red-400 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-400/10"
-                                >
-                                    <FiTrash2 />
-                                    Delete
-                                </button>
-                            </div>
-
-                            <div className="mb-4 flex flex-wrap gap-2">
-                                {tags.length === 0 && (
-                                    <div className="text-xs text-aida-text-muted">
-                                        Create tags on the left to organize
-                                        notes.
-                                    </div>
-                                )}
-
-                                {tags.map((tag) => {
-                                    const active = (
-                                        note.tagIds || []
-                                    ).includes(tag.id);
-
-                                    return (
-                                        <button
-                                            key={tag.id}
-                                            onClick={() =>
-                                                toggleTagOnNote(tag.id)
-                                            }
-                                            className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                                                active
-                                                    ? 'border-aida-pink/40 bg-aida-pink/10 text-aida-pink'
-                                                    : 'border-aida-border text-aida-text-muted hover:bg-aida-light'
-                                            }`}
-                                        >
-                                            {tag.title}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            <textarea
-                                value={note.content || ''}
-                                onChange={(event) =>
-                                    updateNote({
-                                        content: event.target.value,
-                                    })
-                                }
-                                placeholder="Write your note here..."
-                                className="min-h-[280px] flex-1 resize-none rounded-xl border border-aida-border bg-transparent p-4 text-sm leading-6 text-aida-dark"
-                            />
-
-                            <div className="mt-4 rounded-xl border border-aida-border p-4">
-                                <div className="mb-3 flex items-center justify-between">
-                                    <div className="text-sm font-semibold text-aida-dark">
-                                        Attachments
-                                    </div>
-
-                                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-sm text-aida-dark hover:bg-aida-light">
-                                        <FiUpload />
-                                        Attach file
-                                        <input
-                                            type="file"
-                                            onChange={attachFile}
-                                            className="hidden"
-                                        />
-                                    </label>
-                                </div>
-
-                                {attachments.length === 0 ? (
-                                    <div className="text-sm text-aida-text-muted">
-                                        No attachments. Attach images, PDFs,
-                                        or other files.
-                                    </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {attachments.map((attachment) => (
-                                            <div
-                                                key={attachment.id}
-                                                className="rounded-lg border border-aida-border p-3"
-                                            >
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <div className="flex min-w-0 items-center gap-3">
-                                                        <FiFile className="flex-shrink-0 text-aida-text-muted" />
-
-                                                        <div className="min-w-0">
-                                                            <div className="truncate text-sm font-medium text-aida-dark">
-                                                                {
-                                                                    attachment.title
-                                                                }
-                                                            </div>
-
-                                                            <div className="text-xs text-aida-text-muted">
-                                                                {
-                                                                    attachment.mimeType
-                                                                }
-                                                                {' • '}
-                                                                {formatBytes(
-                                                                    attachment.size
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex flex-shrink-0 items-center gap-2">
-                                                        <button
-                                                            onClick={() =>
-                                                                openAttachment(
-                                                                    attachment
-                                                                )
-                                                            }
-                                                            className="rounded-lg border border-aida-border px-3 py-1 text-xs text-aida-dark hover:bg-aida-light"
-                                                        >
-                                                            Open
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() =>
-                                                                removeAttachment(
-                                                                    attachment.id
-                                                                )
-                                                            }
-                                                            className="rounded-lg border border-red-400 px-3 py-1 text-xs text-red-400 hover:bg-red-400/10"
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-3">
-                                                    <AttachmentPreview
-                                                        attachment={attachment}
-                                                        onOpen={() =>
-                                                            openAttachment(
-                                                                attachment
-                                                            )
-                                                        }
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </section>
-            </div>
+                </div>
+            )}
 
             {showSyncSetup && (
                 <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4">
@@ -968,146 +1290,36 @@ const PkbPage = () => {
                                 {mode === 'unlock' && 'Unlock PKB sync'}
                                 {mode === 'recovery' && 'Recover PKB sync'}
                             </h2>
-
-                            <button
-                                onClick={() => setShowSyncSetup(false)}
-                                className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"
-                            >
-                                <FiX />
-                            </button>
+                            <button onClick={() => setShowSyncSetup(false)} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"><FiX /></button>
                         </div>
-
-                        {syncError && (
-                            <div className="mb-4 rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">
-                                {syncError}
-                            </div>
-                        )}
+                        {syncError && <div className="mb-4 rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">{syncError}</div>}
 
                         {mode === 'create' && (
                             <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">
-                                    Choose a sync password. This password is
-                                    used to encrypt your PKB data before it is
-                                    uploaded. It is not stored on the server.
-                                </p>
-
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(event) =>
-                                        setPassword(event.target.value)
-                                    }
-                                    placeholder="Sync password"
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(event) =>
-                                        setConfirmPassword(event.target.value)
-                                    }
-                                    placeholder="Confirm sync password"
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <button
-                                    onClick={handleCreateVault}
-                                    disabled={busy}
-                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                                >
-                                    {busy ? 'Creating vault...' : 'Create encrypted vault'}
-                                </button>
+                                <p className="text-sm text-aida-text-muted">Choose a sync password. It encrypts data before upload and is not stored on the server.</p>
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <button onClick={handleCreateVault} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Creating vault...' : 'Create encrypted vault'}</button>
                             </div>
                         )}
 
                         {mode === 'unlock' && (
                             <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">
-                                    Enter your PKB sync password to unlock
-                                    encrypted sync.
-                                </p>
-
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(event) =>
-                                        setPassword(event.target.value)
-                                    }
-                                    placeholder="Sync password"
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <button
-                                    onClick={handleUnlock}
-                                    disabled={busy}
-                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                                >
-                                    {busy ? 'Unlocking...' : 'Unlock sync'}
-                                </button>
-
-                                <button
-                                    onClick={() => setMode('recovery')}
-                                    className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
-                                >
-                                    Forgot password? Use recovery key
-                                </button>
+                                <p className="text-sm text-aida-text-muted">Enter your PKB sync password to unlock encrypted sync.</p>
+                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <button onClick={handleUnlock} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Unlocking...' : 'Unlock sync'}</button>
+                                <button onClick={() => setMode('recovery')} className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light">Forgot password? Use recovery key</button>
                             </div>
                         )}
 
                         {mode === 'recovery' && (
                             <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">
-                                    Enter your recovery key and choose a new
-                                    sync password.
-                                </p>
-
-                                <textarea
-                                    value={recoveryInput}
-                                    onChange={(event) =>
-                                        setRecoveryInput(event.target.value)
-                                    }
-                                    placeholder="Recovery key"
-                                    rows={3}
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <input
-                                    type="password"
-                                    value={newPassword}
-                                    onChange={(event) =>
-                                        setNewPassword(event.target.value)
-                                    }
-                                    placeholder="New sync password"
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <input
-                                    type="password"
-                                    value={confirmNewPassword}
-                                    onChange={(event) =>
-                                        setConfirmNewPassword(
-                                            event.target.value
-                                        )
-                                    }
-                                    placeholder="Confirm new sync password"
-                                    className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark"
-                                />
-
-                                <button
-                                    onClick={handleRecoveryReset}
-                                    disabled={busy}
-                                    className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                                >
-                                    {busy ? 'Recovering...' : 'Reset password and unlock'}
-                                </button>
-
-                                <button
-                                    onClick={() => setMode('unlock')}
-                                    className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
-                                >
-                                    Back to password unlock
-                                </button>
+                                <p className="text-sm text-aida-text-muted">Enter your recovery key and choose a new sync password.</p>
+                                <textarea value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} placeholder="Recovery key" rows={3} className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} placeholder="Confirm new sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
+                                <button onClick={handleRecoveryReset} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Recovering...' : 'Reset password and unlock'}</button>
+                                <button onClick={() => setMode('unlock')} className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light">Back to password unlock</button>
                             </div>
                         )}
                     </div>
@@ -1118,71 +1330,19 @@ const PkbPage = () => {
                 <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 p-4">
                     <div className="w-full max-w-2xl rounded-2xl border border-aida-border bg-aida-card p-6 shadow-2xl">
                         <div className="mb-4 flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-aida-dark">
-                                Save your recovery key
-                            </h2>
-
-                            <button
-                                onClick={() => setShowRecoveryKey(false)}
-                                disabled={!recoverySaved}
-                                className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light disabled:opacity-40"
-                            >
-                                <FiX />
-                            </button>
+                            <h2 className="text-lg font-bold text-aida-dark">Save your recovery key</h2>
+                            <button onClick={() => setShowRecoveryKey(false)} disabled={!recoverySaved} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light disabled:opacity-40"><FiX /></button>
                         </div>
-
-                        <p className="mb-4 text-sm text-aida-text-muted">
-                            This recovery key can reset your PKB sync password
-                            if you forget it. It is shown only once. Store it
-                            somewhere safe.
-                        </p>
-
-                        <textarea
-                            readOnly
-                            value={recoveryKey}
-                            rows={4}
-                            className="mb-4 w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 font-mono text-xs text-aida-dark"
-                        />
-
+                        <p className="mb-4 text-sm text-aida-text-muted">This recovery key can reset your PKB sync password if you forget it. It is shown only once.</p>
+                        <textarea readOnly value={recoveryKey} rows={4} className="mb-4 w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 font-mono text-xs text-aida-dark" />
                         <div className="mb-4 flex flex-wrap gap-2">
-                            <button
-                                onClick={copyRecoveryKey}
-                                className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
-                            >
-                                <FiKey />
-                                Copy
-                            </button>
-
-                            <button
-                                onClick={downloadRecoveryKey}
-                                className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"
-                            >
-                                <FiDownload />
-                                Download
-                            </button>
+                            <button onClick={copyRecoveryKey} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"><FiKey /> Copy</button>
+                            <button onClick={downloadRecoveryKey} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"><FiDownload /> Download</button>
                         </div>
-
                         <label className="mb-4 flex items-center gap-2 text-sm text-aida-text-muted">
-                            <input
-                                type="checkbox"
-                                checked={recoverySaved}
-                                onChange={(event) =>
-                                    setRecoverySaved(event.target.checked)
-                                }
-                            />
-                            I saved this recovery key somewhere safe.
+                            <input type="checkbox" checked={recoverySaved} onChange={(e) => setRecoverySaved(e.target.checked)} /> I saved this recovery key somewhere safe.
                         </label>
-
-                        <button
-                            onClick={() => {
-                                setShowRecoveryKey(false);
-                                setRecoverySaved(false);
-                            }}
-                            disabled={!recoverySaved}
-                            className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                        >
-                            Continue to PKB
-                        </button>
+                        <button onClick={() => { setShowRecoveryKey(false); setRecoverySaved(false); }} disabled={!recoverySaved} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Continue to PKB</button>
                     </div>
                 </div>
             )}
