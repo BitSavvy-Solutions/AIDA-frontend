@@ -5,11 +5,12 @@ import { FiX, FiLock, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
 import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
-    const { unlockVault } = usePkbSync();
+    const { unlockVault, rememberPassword } = usePkbSync();
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [rememberPasswordChecked, setRememberPasswordChecked] = useState(false);
 
     if (!isOpen) return null;
 
@@ -18,6 +19,9 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
         setError('');
         try {
             await unlockVault(password);
+            if (rememberPasswordChecked) {
+                rememberPassword(password).catch(console.error);
+            }
             setPassword('');
             onClose();
         } catch (e) {
@@ -64,6 +68,18 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
                             {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
                         </button>
                     </div>
+
+                    <label className="flex items-start gap-3 pt-1 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={rememberPasswordChecked}
+                            onChange={(e) => setRememberPasswordChecked(e.target.checked)}
+                            className="mt-1 w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
+                        />
+                        <span className="text-sm text-aida-dark">
+                            Remember this password on this device
+                        </span>
+                    </label>
 
                     {error && (
                         <div className="flex items-center gap-2 text-sm text-red-500">

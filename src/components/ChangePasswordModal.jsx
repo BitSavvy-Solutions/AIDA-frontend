@@ -5,7 +5,7 @@ import { FiX, FiKey, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
 import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const ChangePasswordModal = ({ isOpen, onClose }) => {
-    const { changePassword } = usePkbSync();
+    const { changePassword, rememberPassword, hasRememberedPassword } = usePkbSync();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -30,6 +30,9 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
         try {
             await changePassword(currentPassword, newPassword);
             setDone(true);
+            if (hasRememberedPassword) {
+                rememberPassword(newPassword).catch(console.error);
+            }
         } catch (e) {
             setError(
                 e.message === 'Current password is incorrect.'

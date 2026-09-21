@@ -5,7 +5,7 @@ import { FiX, FiKey, FiAlertCircle, FiAlertTriangle, FiEye, FiEyeOff } from 'rea
 import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const ForgotPasswordModal = ({ isOpen, onClose }) => {
-    const { resetPassword, disableSync } = usePkbSync();
+    const { resetPassword, disableSync, rememberPassword, hasRememberedPassword } = usePkbSync();
     const [step, setStep] = useState('reset');
     const [recoveryKey, setRecoveryKeyInput] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -30,6 +30,9 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
         try {
             await resetPassword(recoveryKey.trim(), newPassword);
             setStep('done');
+            if (hasRememberedPassword) {
+                rememberPassword(newPassword).catch(console.error);
+            }
         } catch (e) {
             setError(e.message);
         } finally {

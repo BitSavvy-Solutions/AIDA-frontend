@@ -8,7 +8,7 @@ import {
 import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const EnableSyncModal = ({ isOpen, onClose }) => {
-    const { createVault } = usePkbSync();
+    const { createVault, rememberPassword } = usePkbSync();
     const [step, setStep] = useState(1);
     const [agreed, setAgreed] = useState(false);
     const [password, setPassword] = useState('');
@@ -19,6 +19,7 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
+    const [rememberPasswordChecked, setRememberPasswordChecked] = useState(false);
 
     if (!isOpen) return null;
 
@@ -48,6 +49,9 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
         setError('');
         try {
             const result = await createVault(password);
+            if (rememberPasswordChecked) {
+                rememberPassword(password).catch(console.error);
+            }
             setRecoveryKey(result.recoveryKey);
             setStep(3);
         } catch (e) {
@@ -81,6 +85,7 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
         setShowPassword(false);
         setRecoveryKey('');
         setSavedKey(false);
+        setRememberPasswordChecked(false);
         setError('');
         onClose();
     };
@@ -171,6 +176,18 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
                                     className="w-full px-3 py-2 border border-aida-border rounded-lg bg-aida-light text-aida-dark focus:ring-2 focus:ring-aida-pink focus:border-transparent"
                                 />
                             </div>
+
+                            <label className="flex items-start gap-3 pt-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={rememberPasswordChecked}
+                                    onChange={(e) => setRememberPasswordChecked(e.target.checked)}
+                                    className="mt-1 w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
+                                />
+                                <span className="text-sm text-aida-dark">
+                                    Remember this password on this device
+                                </span>
+                            </label>
 
                             <p className="text-xs text-aida-text-muted">
                                 After setup, changes are encrypted and synced automatically every few minutes.
