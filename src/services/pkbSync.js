@@ -668,6 +668,68 @@ export async function resetPasswordWithRecovery(
     };
 }
 
+// Add after resetPasswordWithRecovery in src/services/pkbSync.js
+
+export async function deletePkbVault(token) {
+    await vaultFetch(`/apps/${APP_ID}/vault`, {
+        method: 'DELETE',
+        token,
+    });
+}
+
+export async function changePkbPassword(token, currentPassword, newPassword) {
+    const vault = await getAppVault(token);
+
+    if (!vault) {
+        throw new Error('No PKB vault found for this account.');
+    }
+
+    const salt = base64ToBytes(vault.kdf.salt);
+    const iterations = vault.kdf.iterations || KDF_ITERATIONS;
+
+    const kek = await deriveKek(currentPassword, salt, iterations);
+
+    let dek;
+    try {
+        await checkVerifier(kek, vault.verifier);
+        dek = await unwrapDek(kek, vault.wrappedDek);
+    } catch {
+        throw new Error('Current password is incorrect.');
+    }
+
+    const newSalt = randomBytes(16);
+    const newKek = await deriveKek(newPassword, newSalt, KDF_ITERATIONS);
+
+    const wrappedDek = await wrapDek(dek, newKek);
+    const verifier = await createVerifier(newKek);
+
+    await vaultFetch(`/apps/${APP_ID}/vault`, {
+        method: 'PATCH',
+        token,
+        body: {
+            kdf: {
+                algo: 'PBKDF2-SHA256',
+                iterations: KDF_ITERATIONS,
+                salt: bytesToBase64(newSalt),
+            },
+            wrappedDek,
+            verifier,
+        },
+    });
+
+    return { dek };
+}
+
+export async function clearLocalPkbData() {
+    try {
+        await db.docs.clear();
+        await db.meta.clear();
+    } catch (error) {
+        console.error('Failed to clear local PKB data:', error);
+        throw error;
+    }
+}
+
 export async function regenerateRecoveryKey(token, dek) {
     const recoveryKeyBytes = randomBytes(32);
     const recoveryKey = bytesToBase64Url(recoveryKeyBytes);

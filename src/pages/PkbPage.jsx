@@ -3,25 +3,17 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
     FiSearch, FiChevronRight, FiCalendar, FiTag, FiX,
-    FiMessageSquare, FiClock, FiArrowUp, FiArrowDown,
-    FiFilter, FiRefreshCw, FiChevronDown, FiCheckSquare,
-    FiSquare, FiPlus, FiCheck, FiLoader, FiFile, FiEye,
+    FiMessageSquare, FiClock, FiFilter, FiRefreshCw, FiChevronDown,
+    FiCheckSquare, FiSquare, FiPlus, FiCheck, FiLoader, FiFile,
     FiTrash2, FiDownload, FiLock, FiKey,
 } from 'react-icons/fi';
 
 import { useAuth } from '../contexts/AuthContext';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 import { migrateWidgetChatsToPkb, getChatsMigrationStatus } from '../services/migrateChatsToPkb';
 import {
     db as pkbDb,
     uid,
-    getPkbVaultStatus,
-    createPkbVault,
-    unlockPkbVault,
-    resetPasswordWithRecovery,
-    startPkbSync,
-    stopPkbSync,
-    requestPkbSync,
-    syncNow,
 } from '../services/pkbSync';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -348,9 +340,6 @@ const BulkTagModal = ({ isOpen, onClose, tags, selectedNoteIds, onApply, onCreat
         });
     };
 
-    const alreadyCount = (tag) =>
-        selectedNoteIds.size === 0 ? 0 : 0; // simplified; we do not pre-compute per-tag coverage here
-
     const handleApply = async () => {
         if (checked.size === 0 || busy) return;
         setBusy(true);
@@ -468,7 +457,6 @@ const ResourcePreview = ({ resource }) => {
 
 const ChatMessage = ({ message, onOpenResource }) => {
     const isUser = message.sender === 'user';
-    const { kind } = parseNoteContent({ content: '' }); // no-op, just to reuse helpers if needed
 
     const attachments = []
         .concat(message.images || [])
@@ -590,24 +578,12 @@ const PreviewModal = ({ note, resource, tags, onClose }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PkbPage = () => {
-    const { user, apiToken, isAuthenticated } = useAuth();
+    const { user, isAuthenticated } = useAuth();
+    const {
+        vaultExists, dek, syncStatus, syncNow, lockVault, requestSync,
+    } = usePkbSync();
 
-    const [vaultExists, setVaultExists] = useState(false);
-    const [dek, setDek] = useState(null);
-    const [syncStatus, setSyncStatus] = useState('');
-    const [syncError, setSyncError] = useState('');
-    const [busy, setBusy] = useState(false);
-
-    const [showSyncSetup, setShowSyncSetup] = useState(false);
-    const [showRecoveryKey, setShowRecoveryKey] = useState(false);
-    const [mode, setMode] = useState('create');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [recoveryInput, setRecoveryInput] = useState('');
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmNewPassword, setConfirmNewPassword] = useState('');
-    const [recoveryKey, setRecoveryKey] = useState('');
-    const [recoverySaved, setRecoverySaved] = useState(false);
+    const [migrationStatus, setMigrationStatus] = useState('');
 
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -616,7 +592,6 @@ const PkbPage = () => {
     const [customRange, setCustomRange] = useState({ start: '', end: '' });
     const [sort, setSort] = useState('newest');
     const [showFilters, setShowFilters] = useState(false);
-    const [showDateDropdown, setShowDateDropdown] = useState(false);
 
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedNoteIds, setSelectedNoteIds] = useState(() => new Set());
@@ -629,16 +604,12 @@ const PkbPage = () => {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const sentinelRef = useRef(null);
 
-    // Vault status + migration + sync engine effects (same as before)
+    // Clean up any legacy localStorage keys left by earlier implementations.
     useEffect(() => {
         Object.keys(localStorage).filter((k) => k.startsWith('pkbVaultId:')).forEach((k) => localStorage.removeItem(k));
     }, []);
 
-    useEffect(() => {
-        if (!isAuthenticated || !apiToken) { setVaultExists(false); setDek(null); return; }
-        getPkbVaultStatus(apiToken).then(setVaultExists).catch(() => setVaultExists(false));
-    }, [isAuthenticated, apiToken]);
-
+    // Migration from old widget history database.
     useEffect(() => {
         window.migrateWidgetChatsToPkb = migrateWidgetChatsToPkb;
         window.getChatsMigrationStatus = getChatsMigrationStatus;
@@ -650,21 +621,15 @@ const PkbPage = () => {
                 if (cancelled) return;
                 console.info('[chats-migration] result:', result);
                 if (!result || result.skipped) return;
-                setSyncStatus(`Migrated ${result.chats} chat(s): ${result.resourcesCreated} new attachment(s), ${result.resourcesReused} reused.`);
-                requestPkbSync(1000);
+                setMigrationStatus(`Migrated ${result.chats} chat(s): ${result.resourcesCreated} new attachment(s), ${result.resourcesReused} reused.`);
+                requestSync(1000);
             })
             .catch((e) => console.error('[chats-migration] failed:', e));
 
         run();
         const id = setInterval(run, 60000);
         return () => { cancelled = true; clearInterval(id); };
-    }, []);
-
-    useEffect(() => {
-        if (!isAuthenticated || !apiToken || !dek) return;
-        startPkbSync({ token: apiToken, dek, onStatus: setSyncStatus });
-        return () => stopPkbSync();
-    }, [isAuthenticated, apiToken, dek]);
+    }, [requestSync]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(searchQuery), 200);
@@ -680,16 +645,13 @@ const PkbPage = () => {
     }, [toast]);
 
     useEffect(() => {
-        if (!showDateDropdown) return;
-        const handler = (e) => { if (!e.target.closest('.date-dropdown')) setShowDateDropdown(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [showDateDropdown]);
-
-    useEffect(() => {
         setExpandedMatches(new Set());
     }, [debouncedQuery]);
 
+    // Open the global sync setup modal in the header.
+    const openSyncSetup = () => {
+        window.dispatchEvent(new CustomEvent('aida:open-enable-sync'));
+    };
 
     // Data
     const rawNotes = useLiveQuery(() => pkbDb.docs.where('kind').equals('note').and((n) => !n.deleted).reverse().sortBy('modified'), []) || [];
@@ -899,8 +861,8 @@ const PkbPage = () => {
         }));
         setToast(`Added ${tagIds.length} tag${tagIds.length !== 1 ? 's' : ''} to ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
         exitSelection();
-        requestPkbSync(500);
-    }, [selectedNoteIds, exitSelection]);
+        requestSync(500);
+    }, [selectedNoteIds, exitSelection, requestSync]);
 
     const handleCreateTag = useCallback(async (name) => {
         const id = uid('tag');
@@ -914,9 +876,9 @@ const PkbPage = () => {
             dirty: 1,
             deleted: 0,
         });
-        requestPkbSync(500);
+        requestSync(500);
         return id;
-    }, []);
+    }, [requestSync]);
 
     const handleDeleteSelected = useCallback(async () => {
         const ids = [...selectedNoteIds];
@@ -944,8 +906,8 @@ const PkbPage = () => {
 
         setToast(`Deleted ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
         exitSelection();
-        requestPkbSync(500);
-    }, [selectedNoteIds, exitSelection]);
+        requestSync(500);
+    }, [selectedNoteIds, exitSelection, requestSync]);
 
     const openPreview = useCallback((note) => {
         setPreviewNote(note);
@@ -974,61 +936,7 @@ const PkbPage = () => {
         { value: 'mostMessages', label: 'Most messages' },
     ];
 
-    // Sync UI handlers (same as before)
-    const openSyncSetup = () => {
-        setSyncError(''); setPassword(''); setConfirmPassword('');
-        setRecoveryInput(''); setNewPassword(''); setConfirmNewPassword('');
-        setMode(vaultExists ? 'unlock' : 'create');
-        setShowSyncSetup(true);
-    };
-
-    const handleCreateVault = async () => {
-        if (password.length < 8) { setSyncError('Password must be at least 8 characters.'); return; }
-        if (password !== confirmPassword) { setSyncError('Passwords do not match.'); return; }
-        setBusy(true);
-        try {
-            const result = await createPkbVault(apiToken, password);
-            setDek(result.dek); setVaultExists(true); setRecoveryKey(result.recoveryKey);
-            setShowSyncSetup(false); setShowRecoveryKey(true);
-        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
-    };
-
-    const handleUnlock = async () => {
-        if (!password) { setSyncError('Please enter your password.'); return; }
-        setBusy(true);
-        try {
-            const result = await unlockPkbVault(apiToken, password);
-            setDek(result.dek); setPassword(''); setShowSyncSetup(false);
-        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
-    };
-
-    const handleRecoveryReset = async () => {
-        if (!recoveryInput.trim()) { setSyncError('Please enter your recovery key.'); return; }
-        if (newPassword.length < 8) { setSyncError('New password must be at least 8 characters.'); return; }
-        if (newPassword !== confirmNewPassword) { setSyncError('New passwords do not match.'); return; }
-        setBusy(true);
-        try {
-            const result = await resetPasswordWithRecovery(apiToken, recoveryInput, newPassword);
-            setDek(result.dek);
-            setRecoveryInput(''); setNewPassword(''); setConfirmNewPassword(''); setShowSyncSetup(false);
-            setSyncStatus('Password reset complete. Sync unlocked.');
-        } catch (error) { setSyncError(error.message); } finally { setBusy(false); }
-    };
-
-    const lockSync = () => { stopPkbSync(); setDek(null); setSyncStatus('Sync locked.'); };
-
-    const copyRecoveryKey = async () => {
-        try { await navigator.clipboard.writeText(recoveryKey); } catch (e) { console.error(e); }
-    };
-
-    const downloadRecoveryKey = () => {
-        const content = ['PKB recovery key', '', 'Keep this key somewhere safe.', '', recoveryKey, ''].join('\n');
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'pkb-recovery-key.txt'; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-    };
+    const statusMessage = migrationStatus || syncStatus;
 
     return (
         <div className="min-h-screen bg-aida-light">
@@ -1044,25 +952,39 @@ const PkbPage = () => {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        {syncStatus && <span className="rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">{syncStatus}</span>}
-                        {!isAuthenticated && <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted"><FiLock /><span>Log in to enable encrypted sync</span></div>}
-                        {isAuthenticated && !vaultExists && <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"><FiKey /> Enable encrypted sync</button>}
-                        {isAuthenticated && vaultExists && !dek && <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90"><FiLock /> Unlock sync</button>}
+                        {statusMessage && (
+                            <span className="rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
+                                {statusMessage}
+                            </span>
+                        )}
+                        {!isAuthenticated && (
+                            <div className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-2 text-xs text-aida-text-muted">
+                                <FiLock /><span>Log in to enable encrypted sync</span>
+                            </div>
+                        )}
+                        {isAuthenticated && !vaultExists && (
+                            <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+                                <FiKey /> Enable encrypted sync
+                            </button>
+                        )}
+                        {isAuthenticated && vaultExists && !dek && (
+                            <button onClick={openSyncSetup} className="flex items-center gap-2 rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+                                <FiLock /> Unlock sync
+                            </button>
+                        )}
                         {dek && (
                             <>
-                                <button onClick={() => syncNow()} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"><FiRefreshCw /> Sync now</button>
-                                <button onClick={lockSync} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light"><FiLock /> Lock</button>
+                                <button onClick={() => syncNow()} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light">
+                                    <FiRefreshCw /> Sync now
+                                </button>
+                                <button onClick={lockVault} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm font-medium text-aida-dark hover:bg-aida-light">
+                                    <FiLock /> Lock
+                                </button>
                             </>
                         )}
                     </div>
                 </div>
             </div>
-
-            {syncError && (
-                <div className="mx-auto max-w-6xl px-4 pt-4">
-                    <div className="rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">{syncError}</div>
-                </div>
-            )}
 
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
                 {/* Search & controls */}
@@ -1277,72 +1199,6 @@ const PkbPage = () => {
                 <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[2500]">
                     <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-aida-dark text-aida-light text-sm font-medium shadow-2xl">
                         <FiCheck className="w-4 h-4 text-green-400" /> {toast}
-                    </div>
-                </div>
-            )}
-
-            {showSyncSetup && (
-                <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4">
-                    <div className="w-full max-w-lg rounded-2xl border border-aida-border bg-aida-card p-6 shadow-2xl">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-aida-dark">
-                                {mode === 'create' && 'Enable encrypted sync'}
-                                {mode === 'unlock' && 'Unlock PKB sync'}
-                                {mode === 'recovery' && 'Recover PKB sync'}
-                            </h2>
-                            <button onClick={() => setShowSyncSetup(false)} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"><FiX /></button>
-                        </div>
-                        {syncError && <div className="mb-4 rounded-lg border border-red-400 bg-red-400/10 px-4 py-3 text-sm text-red-400">{syncError}</div>}
-
-                        {mode === 'create' && (
-                            <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">Choose a sync password. It encrypts data before upload and is not stored on the server.</p>
-                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <button onClick={handleCreateVault} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Creating vault...' : 'Create encrypted vault'}</button>
-                            </div>
-                        )}
-
-                        {mode === 'unlock' && (
-                            <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">Enter your PKB sync password to unlock encrypted sync.</p>
-                                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <button onClick={handleUnlock} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Unlocking...' : 'Unlock sync'}</button>
-                                <button onClick={() => setMode('recovery')} className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light">Forgot password? Use recovery key</button>
-                            </div>
-                        )}
-
-                        {mode === 'recovery' && (
-                            <div className="space-y-4">
-                                <p className="text-sm text-aida-text-muted">Enter your recovery key and choose a new sync password.</p>
-                                <textarea value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value)} placeholder="Recovery key" rows={3} className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} placeholder="Confirm new sync password" className="w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 text-sm text-aida-dark" />
-                                <button onClick={handleRecoveryReset} disabled={busy} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{busy ? 'Recovering...' : 'Reset password and unlock'}</button>
-                                <button onClick={() => setMode('unlock')} className="w-full rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light">Back to password unlock</button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {showRecoveryKey && (
-                <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-black/60 p-4">
-                    <div className="w-full max-w-2xl rounded-2xl border border-aida-border bg-aida-card p-6 shadow-2xl">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-aida-dark">Save your recovery key</h2>
-                            <button onClick={() => setShowRecoveryKey(false)} disabled={!recoverySaved} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light disabled:opacity-40"><FiX /></button>
-                        </div>
-                        <p className="mb-4 text-sm text-aida-text-muted">This recovery key can reset your PKB sync password if you forget it. It is shown only once.</p>
-                        <textarea readOnly value={recoveryKey} rows={4} className="mb-4 w-full rounded-lg border border-aida-border bg-transparent px-3 py-2 font-mono text-xs text-aida-dark" />
-                        <div className="mb-4 flex flex-wrap gap-2">
-                            <button onClick={copyRecoveryKey} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"><FiKey /> Copy</button>
-                            <button onClick={downloadRecoveryKey} className="flex items-center gap-2 rounded-lg border border-aida-border px-4 py-2 text-sm text-aida-dark hover:bg-aida-light"><FiDownload /> Download</button>
-                        </div>
-                        <label className="mb-4 flex items-center gap-2 text-sm text-aida-text-muted">
-                            <input type="checkbox" checked={recoverySaved} onChange={(e) => setRecoverySaved(e.target.checked)} /> I saved this recovery key somewhere safe.
-                        </label>
-                        <button onClick={() => { setShowRecoveryKey(false); setRecoverySaved(false); }} disabled={!recoverySaved} className="w-full rounded-lg bg-aida-pink px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Continue to PKB</button>
                     </div>
                 </div>
             )}

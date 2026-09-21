@@ -5,6 +5,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 
 import { googleConfig } from './config/authConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { PkbSyncProvider } from './contexts/PkbSyncContext';
 
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -16,22 +17,14 @@ import AidaWidget from './components/AidaWidget';
 import Account from './pages/Account';
 import PkbPage from './pages/PkbPage';
 
-/**
- * AppContent uses hooks from providers that wrap it, and owns the
- * global layout (header → main → footer) plus the persistent widget.
- */
 const AppContent = () => {
     const { isAuthenticated, authLoading } = useAuth();
 
     return (
         <Router>
-            {/* Wrap everything in a fragment so the Router has a single child */}
             <>
                 <Routes>
-                    {/* DrawPage route without the standard layout */}
                     <Route path="/draw" element={<DrawPage />} />
-                    
-                    {/* All other routes with standard layout */}
                     <Route path="/*" element={
                         <div className="min-h-screen flex flex-col bg-aida-light">
                             <Header />
@@ -50,7 +43,6 @@ const AppContent = () => {
                     } />
                 </Routes>
 
-                {/* Global Widget container - Moved outside Routes so it shows on ALL pages including /draw */}
                 <div id="aida-global-widget-container" className="fixed bottom-5 right-5 z-[1000]" />
                 {!authLoading && (
                     <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
@@ -64,7 +56,9 @@ function App() {
     return (
         <GoogleOAuthProvider clientId={googleConfig.clientId}>
             <AuthProvider>
-                <AppContent />
+                <PkbSyncProvider>
+                    <AppContent />
+                </PkbSyncProvider>
             </AuthProvider>
         </GoogleOAuthProvider>
     );
