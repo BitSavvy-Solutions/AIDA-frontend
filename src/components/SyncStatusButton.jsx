@@ -45,6 +45,18 @@ const SyncStatusButton = () => {
         return () => document.removeEventListener('mousedown', handler);
     }, [panelOpen]);
 
+    useEffect(() => {
+        const handler = () => {
+            if (!vaultExists) {
+                setEnableOpen(true);
+            } else if (locked) {
+                setUnlockOpen(true);
+            }
+        };
+        window.addEventListener('aida:open-enable-sync', handler);
+        return () => window.removeEventListener('aida:open-enable-sync', handler);
+    }, [vaultExists, locked]);
+
     if (!isAuthenticated) return null;
 
     const statusLower = (syncStatus || '').toLowerCase();
