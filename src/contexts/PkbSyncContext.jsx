@@ -221,7 +221,6 @@ export const PkbSyncProvider = ({ children }) => {
         if (!apiToken) throw new Error('Not authenticated');
         await syncNow();
         await deletePkbVault(apiToken);
-        await clearLocalPkbData();
         stopPkbSync();
         forgetPassword();
         setDek(null);
