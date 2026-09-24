@@ -611,9 +611,7 @@ const PkbPage = () => {
 
     // Migration from old widget history database.
     useEffect(() => {
-        window.migrateWidgetChatsToPkb = migrateWidgetChatsToPkb;
-        window.getChatsMigrationStatus = getChatsMigrationStatus;
-        window.pkbDb = pkbDb;
+
 
         let cancelled = false;
         const run = () => migrateWidgetChatsToPkb()

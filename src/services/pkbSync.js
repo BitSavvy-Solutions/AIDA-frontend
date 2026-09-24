@@ -730,23 +730,7 @@ export async function clearLocalPkbData() {
     }
 }
 
-export async function regenerateRecoveryKey(token, dek) {
-    const recoveryKeyBytes = randomBytes(32);
-    const recoveryKey = bytesToBase64Url(recoveryKeyBytes);
 
-    const recoveryCryptoKey = await importRawAesKey(recoveryKeyBytes);
-    const wrappedDekRecovery = await wrapDek(dek, recoveryCryptoKey);
-
-    await vaultFetch(`/apps/${APP_ID}/vault`, {
-        method: 'PATCH',
-        token,
-        body: {
-            wrappedDekRecovery,
-        },
-    });
-
-    return recoveryKey;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Local sync helpers
