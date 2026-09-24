@@ -795,6 +795,34 @@ export async function markUnsyncedDocsDirty() {
     await Promise.all(jobs);
 }
 
+export async function clearSyncMetadataForAllDocs() {
+    const docs = await db.docs.toArray();
+    const updateJobs = [];
+    const tombstoneIds = [];
+
+    for (const doc of docs) {
+        if (doc.deleted) {
+            tombstoneIds.push(doc.id);
+        } else {
+            updateJobs.push(db.docs.update(doc.id, {
+                syncTime: null,
+                remoteModified: null,
+                blobSyncTime: null,
+                blobRemoteModified: null,
+            }));
+        }
+    }
+
+    await Promise.all(updateJobs);
+
+    if (tombstoneIds.length) {
+        await db.docs.bulkDelete(tombstoneIds);
+    }
+
+    // Clear the last sync timestamp as well
+    await db.meta.delete('lastSyncAt');
+}
+
 async function addConflictCopy(doc, label) {
     const copy = cleanDocForSync(doc);
 

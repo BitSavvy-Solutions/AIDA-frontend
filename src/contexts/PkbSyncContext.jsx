@@ -15,6 +15,7 @@ import {
     stopPkbSync,
     requestPkbSync,
     syncNow,
+    clearSyncMetadataForAllDocs,
 } from '../services/pkbSync';
 
 const PkbSyncContext = createContext(null);
@@ -221,6 +222,7 @@ export const PkbSyncProvider = ({ children }) => {
         if (!apiToken) throw new Error('Not authenticated');
         await syncNow();
         await deletePkbVault(apiToken);
+        await clearSyncMetadataForAllDocs();
         stopPkbSync();
         forgetPassword();
         setDek(null);
