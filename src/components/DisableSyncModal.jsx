@@ -14,29 +14,28 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [disabling, setDisabling] = useState(false);
-    const [verified, setVerified] = useState(false); // true after password is confirmed
 
     if (!isOpen) return null;
 
-    const handleVerifyPassword = async () => {
-        setError('');
-        try {
-            // Verify the password without unlocking the vault in context
-            await unlockPkbVault(apiToken, password);
-            setVerified(true);
-        } catch (e) {
-            setError('Incorrect password.');
-        }
-    };
-
     const handleDisable = async () => {
+        if (!password) {
+            setError('Please enter your vault password.');
+            return;
+        }
         setError('');
         setDisabling(true);
         try {
+            // Verify the password without unlocking the vault in context
+            await unlockPkbVault(apiToken, password);
+            // If verification succeeds, proceed with disabling
             await disableSync();
             onClose();
         } catch (e) {
-            setError(e.message || 'Failed to disable sync. Nothing was deleted.');
+            if (e.message === 'Wrong password or corrupt vault.') {
+                setError('Incorrect password.');
+            } else {
+                setError(e.message || 'Failed to disable sync. Nothing was deleted.');
+            }
         } finally {
             setDisabling(false);
         }
@@ -46,7 +45,6 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
         setPassword('');
         setShowPassword(false);
         setError('');
-        setVerified(false);
         onClose();
     };
 
@@ -64,85 +62,67 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
                 </div>
 
                 <div className="p-6 space-y-4">
-                    {!verified ? (
-                        <>
-                            <p className="text-sm text-aida-text-muted">
-                                Enter your vault password to confirm deletion. This action cannot be undone.
-                            </p>
-                            <div className="relative">
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Vault password"
-                                    className="w-full px-3 py-2 pr-10 border border-aida-border rounded-lg bg-aida-light text-aida-dark focus:ring-2 focus:ring-aida-pink focus:border-transparent"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
-                                    autoFocus
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(p => !p)}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-aida-text-muted hover:text-aida-dark"
-                                >
-                                    {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
-                                </button>
-                            </div>
-                            {error && (
-                                <div className="flex items-center gap-2 text-sm text-red-500">
-                                    <FiAlertCircle className="w-4 h-4" />
-                                    {error}
-                                </div>
-                            )}
-                            <button
-                                onClick={handleVerifyPassword}
-                                disabled={!password}
-                                className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                            >
-                                Verify Password
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            <ul className="space-y-2 list-disc pl-5 text-sm text-aida-text-muted">
-                                <li>Anything on the server that is missing on this device will be downloaded first.</li>
-                                <li>The encrypted server backup will then be <strong className="text-aida-dark">permanently deleted</strong>.</li>
-                                <li>Other devices will show that the backup no longer exists and will stop syncing.</li>
-                                <li>Your data on this device stays exactly as it is.</li>
-                                <li>You can re-enable sync at any time with a new password.</li>
-                            </ul>
+                    <ul className="space-y-2 list-disc pl-5 text-sm text-aida-text-muted">
+                        <li>Anything on the server that is missing on this device will be downloaded first.</li>
+                        <li>The encrypted server backup will then be <strong className="text-aida-dark">permanently deleted</strong>.</li>
+                        <li>Other devices will show that the backup no longer exists and will stop syncing.</li>
+                        <li>Your data on this device stays exactly as it is.</li>
+                        <li>You can re-enable sync at any time with a new password.</li>
+                    </ul>
 
-                            {error && (
-                                <div className="flex items-center gap-2 text-sm text-red-500">
-                                    <FiAlertCircle className="w-4 h-4" />
-                                    {error}
-                                </div>
-                            )}
+                    <p className="text-sm text-aida-text-muted">
+                        Enter your vault password to confirm deletion.
+                    </p>
 
-                            {disabling && (
-                                <div className="flex items-center gap-2 text-sm text-aida-text-muted">
-                                    <FiRefreshCw className="w-4 h-4 animate-spin text-aida-pink" />
-                                    Downloading, then deleting the backup...
-                                </div>
-                            )}
+                    <div className="relative">
+                        <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Vault password"
+                            className="w-full px-3 py-2 pr-10 border border-aida-border rounded-lg bg-aida-light text-aida-dark focus:ring-2 focus:ring-aida-pink focus:border-transparent"
+                            onKeyDown={(e) => e.key === 'Enter' && handleDisable()}
+                            autoFocus
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(p => !p)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-aida-text-muted hover:text-aida-dark"
+                        >
+                            {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                        </button>
+                    </div>
 
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={reset}
-                                    disabled={disabling}
-                                    className="flex-1 px-4 py-2.5 border border-aida-border rounded-lg text-aida-dark font-medium hover:bg-aida-light disabled:opacity-50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleDisable}
-                                    disabled={disabling}
-                                    className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-                                >
-                                    {disabling ? 'Working...' : 'Disable and Delete'}
-                                </button>
-                            </div>
-                        </>
+                    {error && (
+                        <div className="flex items-center gap-2 text-sm text-red-500">
+                            <FiAlertCircle className="w-4 h-4" />
+                            {error}
+                        </div>
                     )}
+
+                    {disabling && (
+                        <div className="flex items-center gap-2 text-sm text-aida-text-muted">
+                            <FiRefreshCw className="w-4 h-4 animate-spin text-aida-pink" />
+                            Downloading, then deleting the backup...
+                        </div>
+                    )}
+
+                    <div className="flex gap-3">
+                        <button
+                            onClick={reset}
+                            disabled={disabling}
+                            className="flex-1 px-4 py-2.5 border border-aida-border rounded-lg text-aida-dark font-medium hover:bg-aida-light disabled:opacity-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleDisable}
+                            disabled={disabling || !password}
+                            className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                            {disabling ? 'Working...' : 'Disable and Delete'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>,
