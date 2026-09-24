@@ -39,7 +39,6 @@ import { db as pkbDb, getMeta, setMeta } from './pkbSync';
 
 const SOURCE_DB = 'AidaWidgetDB';
 const META_KEY = 'migration.widgetChats.v1';
-const MIGRATED_TAG = 'migrated-chats';
 const MIG_TAG_PREFIX = 'tag_mig_';
 
 // 1 = old flattened markdown transcript, 2 = structured chat JSON.
@@ -532,7 +531,7 @@ const buildNotePayload = async (chat, ctx) => {
         }
     }
 
-    const tagIds = [ctx.migratedTagId];
+    const tagIds = [];
     for (const tagId of ctx.chatTagIds.get(chat.id) || []) {
         if (!tagIds.includes(tagId)) tagIds.push(tagId);
     }
@@ -618,8 +617,6 @@ export const migrateWidgetChatsToPkb = async () => {
             byName.set(String(tag.title).toLowerCase(), tag.id);
         }
 
-        const migratedTagId = await ensureTag({ name: MIGRATED_TAG, now, stats, byName });
-
         const chatTagIds = new Map();
 
         for (const project of projects) {
@@ -649,14 +646,14 @@ export const migrateWidgetChatsToPkb = async () => {
             }
         }
 
-        const ctx = { now, stats, chatTagIds, migratedTagId };
+        const ctx = { now, stats, chatTagIds };
 
         for (const chatId of chatIds) {
             const noteId = noteIdFor(chatId);
             const existing = await pkbDb.docs.get(noteId);
 
             const desiredMigTags = Array.from(
-                new Set([migratedTagId, ...(chatTagIds.get(chatId) || [])])
+                new Set(chatTagIds.get(chatId) || [])
             );
 
             // Case 1: never migrated, or previously deleted in PKB.
