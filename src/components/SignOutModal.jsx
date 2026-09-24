@@ -1,14 +1,11 @@
-// src/components/SignOutModal.jsx
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX, FiLogOut, FiAlertTriangle, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
-import { useAuth } from '../contexts/AuthContext';
 import { usePkbSync } from '../contexts/PkbSyncContext';
 import { db } from '../services/pkbSync';
 
 const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
-    const { logout } = useAuth();
-    const { syncNow, removeLocalData } = usePkbSync();
+    const { removeLocalData } = usePkbSync();
 
     const [removeLocal, setRemoveLocal] = useState(true);
     const [chatCount, setChatCount] = useState(null);
@@ -40,7 +37,6 @@ const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
             if (removeLocal) {
                 await removeLocalData();
             }
-            logout();
             onClose();
             onSignedOut?.();
         } catch (e) {
@@ -48,6 +44,7 @@ const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
             setWorking(false);
         }
     };
+
 
     return createPortal(
         <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">

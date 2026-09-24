@@ -114,17 +114,20 @@ const Header = () => {
         }
     };
 
+    const doLogout = () => {
+        logout();
+    };
+
     const handleLogout = () => {
         if (vaultExists) {
             setSignOutOpen(true);
             return;
         }
-        logout();
+        doLogout();
     };
 
-    const handleSignedOut = () => {
-        logout();
-    };
+    const handleSignedOut = doLogout;
+
 
     const getBalanceColor = (amount) => {
         if (amount > 0) return 'text-green-600 dark:text-green-400';
