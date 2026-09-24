@@ -150,6 +150,21 @@ export const PkbSyncProvider = ({ children }) => {
         if (!isAuthenticated && !authLoading) forgetPassword();
     }, [isAuthenticated, authLoading, forgetPassword]);
 
+    const tryAutoUnlock = useCallback(async () => {
+        if (!apiToken || !vaultExists || dek) return;
+        const enc = localStorage.getItem(REMEMBER_KEY);
+        if (!enc) return;
+
+        try {
+            const password = await decryptWithToken(enc, apiToken);
+            await unlockVault(password);
+        } catch (error) {
+            console.warn('Auto unlock failed, clearing remembered password:', error);
+            forgetPassword();
+        }
+    }, [apiToken, vaultExists, dek, forgetPassword]);
+
+
     // Try to auto-unlock when we know a vault exists and have a token
     useEffect(() => {
         if (loading || !vaultExists || dek || !apiToken) return;
@@ -167,20 +182,7 @@ export const PkbSyncProvider = ({ children }) => {
         }
     }, [apiToken]);
 
-    const tryAutoUnlock = useCallback(async () => {
-        if (!apiToken || !vaultExists || dek) return;
-        const enc = localStorage.getItem(REMEMBER_KEY);
-        if (!enc) return;
-
-        try {
-            const password = await decryptWithToken(enc, apiToken);
-            await unlockVault(password);
-        } catch (error) {
-            console.warn('Auto unlock failed, clearing remembered password:', error);
-            forgetPassword();
-        }
-    }, [apiToken, vaultExists, dek, forgetPassword]);
-
+    
     const createVault = useCallback(async (password) => {
         if (!apiToken) throw new Error('Not authenticated');
         const result = await createPkbVault(apiToken, password);
