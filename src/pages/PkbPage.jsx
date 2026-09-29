@@ -609,25 +609,6 @@ const PkbPage = () => {
         Object.keys(localStorage).filter((k) => k.startsWith('pkbVaultId:')).forEach((k) => localStorage.removeItem(k));
     }, []);
 
-    // Migration from old widget history database.
-    useEffect(() => {
-
-
-        let cancelled = false;
-        const run = () => migrateWidgetChatsToPkb()
-            .then((result) => {
-                if (cancelled) return;
-                console.info('[chats-migration] result:', result);
-                if (!result || result.skipped) return;
-                setMigrationStatus(`Migrated ${result.chats} chat(s): ${result.resourcesCreated} new attachment(s), ${result.resourcesReused} reused.`);
-                requestSync(1000);
-            })
-            .catch((e) => console.error('[chats-migration] failed:', e));
-
-        run();
-        const id = setInterval(run, 60000);
-        return () => { cancelled = true; clearInterval(id); };
-    }, [requestSync]);
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(searchQuery), 200);
@@ -934,7 +915,7 @@ const PkbPage = () => {
         { value: 'mostMessages', label: 'Most messages' },
     ];
 
-    const statusMessage = migrationStatus || syncStatus;
+    const statusMessage = syncStatus;
 
     return (
         <div className="min-h-screen bg-aida-light">

@@ -7,6 +7,8 @@ import { googleConfig } from './config/authConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { PkbSyncProvider } from './contexts/PkbSyncContext';
 
+import ChatMigrationRunner from './components/ChatMigrationRunner';
+
 import Header from './components/Header';
 import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
@@ -47,6 +49,7 @@ const AppContent = () => {
                 {!authLoading && (
                     <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
                 )}
+                <ChatMigrationRunner />
             </>
         </Router>
     );
