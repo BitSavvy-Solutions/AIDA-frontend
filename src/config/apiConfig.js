@@ -15,7 +15,9 @@ const config = {
         ? 'http://localhost:5173'
         : window.location.origin,
 
-    VAULT_URL : 'http://localhost:8080/api',
+    VAULT_URL : isDevelopment
+        ? 'https://ethivault-dev.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api'
+        : 'https://ethivault-dev.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api',
 
     FUNCTION_HOST_KEY: 'dlkgVHOPghXdpOeE9SgyYe0r6nN3AjuEowskmJsDDhrBAzFuSlPb7g==',
 
