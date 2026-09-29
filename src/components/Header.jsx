@@ -4,20 +4,25 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Disclosure, Menu, Transition } from '@headlessui/react';
 import { useAuth } from '../contexts/AuthContext';
-import { FiLogOut, FiLogIn, FiPlus, FiLoader, FiStar, FiMenu, FiX, FiUser, FiHome, FiSun, FiMoon } from 'react-icons/fi';
+import { usePkbSync } from '../contexts/PkbSyncContext';
+import {
+    FiLogOut, FiLogIn, FiPlus, FiLoader, FiStar, FiMenu, FiX, FiUser, FiHome,
+    FiSun, FiMoon,
+} from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 import creditService from '../services/creditService';
 import BuyCreditsModal from './BuyCreditsModal';
 import SyncStatusButton from './SyncStatusButton';
-import { useVault } from '../contexts/VaultContext';
 import SignOutModal from './SignOutModal';
+import { FiBook } from 'react-icons/fi';
 
 const Header = () => {
     const { isAuthenticated, user, logout } = useAuth();
-    const { vault } = useVault();
-    const [signOutOpen, setSignOutOpen] = useState(false);
+    const { vaultExists } = usePkbSync();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+
+    const [signOutOpen, setSignOutOpen] = useState(false);
 
     const [theme, setTheme] = useState(() => {
         return localStorage.getItem('aida_theme') || 'light';
@@ -109,15 +114,20 @@ const Header = () => {
         }
     };
 
+    const doLogout = () => {
+        logout();
+    };
+
     const handleLogout = () => {
-        // With encrypted sync set up, ask what to do with local chats first.
-        if (vault) {
+        if (vaultExists) {
             setSignOutOpen(true);
             return;
         }
-        logout();
-        navigate('/');
+        doLogout();
     };
+
+    const handleSignedOut = doLogout;
+
 
     const getBalanceColor = (amount) => {
         if (amount > 0) return 'text-green-600 dark:text-green-400';
@@ -195,8 +205,8 @@ const Header = () => {
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('light'); }}
                                                                         className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'light'
-                                                                            ? 'bg-white text-gray-900 shadow-sm'
-                                                                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                                                                                ? 'bg-white text-gray-900 shadow-sm'
+                                                                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                                                                             }`}
                                                                     >
                                                                         <FiSun className="w-4 h-4" />
@@ -204,8 +214,8 @@ const Header = () => {
                                                                     <button
                                                                         onClick={(e) => { e.preventDefault(); setTheme('dark'); }}
                                                                         className={`flex-1 flex justify-center items-center py-1.5 rounded-md transition-all duration-200 ${theme === 'dark'
-                                                                            ? 'bg-[#1e293b] text-white shadow-sm'
-                                                                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                                                                                ? 'bg-[#1e293b] text-white shadow-sm'
+                                                                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                                                                             }`}
                                                                     >
                                                                         <FiMoon className="w-4 h-4" />
@@ -230,6 +240,19 @@ const Header = () => {
                                                                         className={`${active ? 'bg-gray-50 dark:bg-gray-700 text-aida-pink' : 'text-gray-700 dark:text-gray-200'} flex items-center px-4 py-2 text-sm transition-colors`}
                                                                     >
                                                                         <FiUser className="mr-2" /> Account
+                                                                    </Link>
+                                                                )}
+                                                            </Menu.Item>
+                                                            <Menu.Item>
+                                                                {({ active }) => (
+                                                                    <Link
+                                                                        to="/pkb"
+                                                                        className={`${active
+                                                                                ? 'bg-gray-50 dark:bg-gray-700 text-aida-pink'
+                                                                                : 'text-gray-700 dark:text-gray-200'
+                                                                            } flex items-center px-4 py-2 text-sm transition-colors`}
+                                                                    >
+                                                                        <FiBook className="mr-2" /> PKB
                                                                     </Link>
                                                                 )}
                                                             </Menu.Item>
@@ -305,8 +328,8 @@ const Header = () => {
                                             <button
                                                 onClick={() => setTheme('light')}
                                                 className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'light'
-                                                    ? 'bg-white text-gray-900 shadow-sm'
-                                                    : 'text-gray-500 dark:text-gray-400'
+                                                        ? 'bg-white text-gray-900 shadow-sm'
+                                                        : 'text-gray-500 dark:text-gray-400'
                                                     }`}
                                             >
                                                 <FiSun className="w-5 h-5 mr-2" /> Light
@@ -314,8 +337,8 @@ const Header = () => {
                                             <button
                                                 onClick={() => setTheme('dark')}
                                                 className={`flex-1 flex justify-center items-center py-2 rounded-md transition-all duration-200 ${theme === 'dark'
-                                                    ? 'bg-[#1e293b] text-white shadow-sm'
-                                                    : 'text-gray-500 dark:text-gray-400'
+                                                        ? 'bg-[#1e293b] text-white shadow-sm'
+                                                        : 'text-gray-500 dark:text-gray-400'
                                                     }`}
                                             >
                                                 <FiMoon className="w-5 h-5 mr-2" /> Dark
@@ -343,6 +366,13 @@ const Header = () => {
                                             <FiUser className="mr-3" /> Account
                                         </Disclosure.Button>
                                         <Disclosure.Button
+                                            as={Link}
+                                            to="/pkb"
+                                            className="flex items-center px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-200 rounded-md hover:text-aida-pink hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                                        >
+                                            <FiBook className="mr-3" /> PKB
+                                        </Disclosure.Button>
+                                        <Disclosure.Button
                                             as="button"
                                             onClick={handleLogout}
                                             className="flex items-center w-full px-3 py-2 text-base font-medium text-gray-700 dark:text-gray-200 rounded-md hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-50 dark:hover:bg-red-900/20"
@@ -363,17 +393,18 @@ const Header = () => {
                 onClose={() => setIsModalOpen(false)}
                 currentBalance={balance}
             />
+
             <SignOutModal
                 isOpen={signOutOpen}
                 onClose={() => setSignOutOpen(false)}
-                onSignedOut={() => navigate('/')}
+                onSignedOut={handleSignedOut}
             />
 
             {notification && createPortal(
                 <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm animate-slide-up">
                     <div className={`flex items-center gap-4 px-5 py-4 rounded-xl shadow-2xl border ${notification.type === 'processing'
-                        ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                        : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
+                            ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                            : 'bg-green-50 dark:bg-green-900/80 border-green-200 dark:border-green-800'
                         }`}>
                         <div className={`p-2 rounded-full ${notification.type === 'processing' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-green-100 dark:bg-green-900/50'
                             }`}>

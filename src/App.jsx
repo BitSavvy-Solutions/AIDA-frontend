@@ -5,8 +5,9 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 
 import { googleConfig } from './config/authConfig';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { VaultProvider } from './contexts/VaultContext';
-import { SyncProvider } from './contexts/SyncContext';
+import { PkbSyncProvider } from './contexts/PkbSyncContext';
+
+import ChatMigrationRunner from './components/ChatMigrationRunner';
 
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -16,6 +17,7 @@ import SourcePage from './pages/SourcePage';
 import DrawPage from './pages/DrawPage';
 import AidaWidget from './components/AidaWidget';
 import Account from './pages/Account';
+import PkbPage from './pages/PkbPage';
 
 const AppContent = () => {
     const { isAuthenticated, authLoading } = useAuth();
@@ -30,11 +32,12 @@ const AppContent = () => {
                             <Header />
                             <main className="flex-grow">
                                 <Routes>
-                                    <Route path="/"        element={<HomePage />} />
-                                    <Route path="/login"   element={<LoginPage />} />
-                                    <Route path="/source"  element={<SourcePage />} />
+                                    <Route path="/"       element={<HomePage />} />
+                                    <Route path="/login"  element={<LoginPage />} />
+                                    <Route path="/source" element={<SourcePage />} />
                                     <Route path="/account" element={<Account />} />
-                                    <Route path="*"        element={<Navigate to="/" replace />} />
+                                    <Route path="/pkb"    element={<PkbPage />} />
+                                    <Route path="*"       element={<Navigate to="/" replace />} />
                                 </Routes>
                             </main>
                             <Footer />
@@ -46,6 +49,7 @@ const AppContent = () => {
                 {!authLoading && (
                     <AidaWidget key={isAuthenticated ? 'authenticated' : 'anonymous'} />
                 )}
+                <ChatMigrationRunner />
             </>
         </Router>
     );
@@ -55,11 +59,9 @@ function App() {
     return (
         <GoogleOAuthProvider clientId={googleConfig.clientId}>
             <AuthProvider>
-                <VaultProvider>
-                    <SyncProvider>
-                        <AppContent />
-                    </SyncProvider>
-                </VaultProvider>
+                <PkbSyncProvider>
+                    <AppContent />
+                </PkbSyncProvider>
             </AuthProvider>
         </GoogleOAuthProvider>
     );

@@ -1,11 +1,12 @@
+// src/components/ForgotPasswordModal.jsx
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX, FiKey, FiAlertCircle, FiAlertTriangle, FiEye, FiEyeOff } from 'react-icons/fi';
-import { useVault } from '../contexts/VaultContext';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const ForgotPasswordModal = ({ isOpen, onClose }) => {
-    const { resetWithRecovery, resetBackup } = useVault();
-    const [step, setStep] = useState('reset'); // reset | done | lost | lostDone
+    const { resetPassword, disableSync, rememberPassword, hasRememberedPassword } = usePkbSync();
+    const [step, setStep] = useState('reset');
     const [recoveryKey, setRecoveryKeyInput] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,8 +28,11 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
         setLoading(true);
         setError('');
         try {
-            await resetWithRecovery(recoveryKey.trim(), newPassword);
+            await resetPassword(recoveryKey.trim(), newPassword);
             setStep('done');
+            if (hasRememberedPassword) {
+                rememberPassword(newPassword).catch(console.error);
+            }
         } catch (e) {
             setError(e.message);
         } finally {
@@ -40,7 +44,7 @@ const ForgotPasswordModal = ({ isOpen, onClose }) => {
         setLoading(true);
         setError('');
         try {
-            await resetBackup();
+            await disableSync();
             setStep('lostDone');
         } catch (e) {
             setError(e.message);

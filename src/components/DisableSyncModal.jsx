@@ -1,25 +1,51 @@
+// src/components/DisableSyncModal.jsx
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FiX, FiAlertTriangle, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
-import { useVault } from '../contexts/VaultContext';
-import { useSync } from '../contexts/SyncContext';
+import { FiX, FiAlertTriangle, FiAlertCircle, FiRefreshCw, FiEye, FiEyeOff } from 'react-icons/fi';
+import { usePkbSync } from '../contexts/PkbSyncContext';
+import { unlockPkbVault } from '../services/pkbSync'; // used only for password verification
+import { useAuth } from '../contexts/AuthContext';
 
 const DisableSyncModal = ({ isOpen, onClose }) => {
-    const { setNotice } = useVault();
-    const { disableSync, disabling } = useSync();
+    const { disableSync } = usePkbSync();
+    const { apiToken } = useAuth();
+
+    const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [disabling, setDisabling] = useState(false);
 
     if (!isOpen) return null;
 
     const handleDisable = async () => {
+        if (!password) {
+            setError('Please enter your vault password.');
+            return;
+        }
         setError('');
+        setDisabling(true);
         try {
+            // Verify the password without unlocking the vault in context
+            await unlockPkbVault(apiToken, password);
+            // If verification succeeds, proceed with disabling
             await disableSync();
-            setNotice('Encrypted sync is off. The server backup was deleted. Your data stays on this device.');
             onClose();
         } catch (e) {
-            setError(e.message || 'Failed to disable sync. Nothing was deleted.');
+            if (e.message === 'Wrong password or corrupt vault.') {
+                setError('Incorrect password.');
+            } else {
+                setError(e.message || 'Failed to disable sync. Nothing was deleted.');
+            }
+        } finally {
+            setDisabling(false);
         }
+    };
+
+    const reset = () => {
+        setPassword('');
+        setShowPassword(false);
+        setError('');
+        onClose();
     };
 
     return createPortal(
@@ -30,7 +56,7 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
                         <FiAlertTriangle className="w-5 h-5 text-red-500" />
                         Disable Encrypted Sync
                     </h2>
-                    <button onClick={onClose} disabled={disabling} className="text-aida-text-muted hover:text-aida-dark">
+                    <button onClick={reset} disabled={disabling} className="text-aida-text-muted hover:text-aida-dark">
                         <FiX className="w-5 h-5" />
                     </button>
                 </div>
@@ -43,6 +69,29 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
                         <li>Your data on this device stays exactly as it is.</li>
                         <li>You can re-enable sync at any time with a new password.</li>
                     </ul>
+
+                    <p className="text-sm text-aida-text-muted">
+                        Enter your vault password to confirm deletion.
+                    </p>
+
+                    <div className="relative">
+                        <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Vault password"
+                            className="w-full px-3 py-2 pr-10 border border-aida-border rounded-lg bg-aida-light text-aida-dark focus:ring-2 focus:ring-aida-pink focus:border-transparent"
+                            onKeyDown={(e) => e.key === 'Enter' && handleDisable()}
+                            autoFocus
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(p => !p)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-aida-text-muted hover:text-aida-dark"
+                        >
+                            {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+                        </button>
+                    </div>
 
                     {error && (
                         <div className="flex items-center gap-2 text-sm text-red-500">
@@ -60,7 +109,7 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
 
                     <div className="flex gap-3">
                         <button
-                            onClick={onClose}
+                            onClick={reset}
                             disabled={disabling}
                             className="flex-1 px-4 py-2.5 border border-aida-border rounded-lg text-aida-dark font-medium hover:bg-aida-light disabled:opacity-50 transition-colors"
                         >
@@ -68,7 +117,7 @@ const DisableSyncModal = ({ isOpen, onClose }) => {
                         </button>
                         <button
                             onClick={handleDisable}
-                            disabled={disabling}
+                            disabled={disabling || !password}
                             className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
                         >
                             {disabling ? 'Working...' : 'Disable and Delete'}

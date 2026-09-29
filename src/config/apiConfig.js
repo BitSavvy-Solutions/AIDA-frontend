@@ -9,16 +9,13 @@ const config = {
 
     FASTAPI_URL: isDevelopment
         ? 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api'
-        : 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api',
-
-    // NEW: Encrypted vault service
-    VAULT_URL: isDevelopment
-        ? 'https://ethivault-dev.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api/vault'
-        : 'https://ethivault-dev.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api/vault',
+        : 'https://aida-agentbackend-prod.graydune-dda4d1ba.canadaeast.azurecontainerapps.io/api',    
 
     FRONTEND_URL: isDevelopment
         ? 'http://localhost:5173'
         : window.location.origin,
+
+    VAULT_URL : 'http://localhost:8080/api',
 
     FUNCTION_HOST_KEY: 'dlkgVHOPghXdpOeE9SgyYe0r6nN3AjuEowskmJsDDhrBAzFuSlPb7g==',
 
@@ -27,6 +24,7 @@ const config = {
     ENDPOINTS: {
         USERS: '/users',
         USER_BY_ID: '/users',
+        // NEW: Auth endpoints added for clarity and future use
         AUTH_GOOGLE: '/auth/google',
         AUTH_LOGOUT: '/auth/logout',
     },
@@ -40,24 +38,50 @@ const config = {
 
 export const buildUrl = (endpoint, id = null, queryParams = {}) => {
     let url = config.AZURE_FUNCTIONS_URL + endpoint;
-    if (id) url += `/${id}`;
+
+    if (id) {
+        url += `/${id}`;
+    }
+
     const params = new URLSearchParams(queryParams);
-    if (params.toString()) url += `?${params.toString()}`;
+    if (params.toString()) {
+        url += `?${params.toString()}`;
+    }
+
     return url;
 };
 
 export const getRequestOptions = (additionalHeaders = {}) => {
-    const headers = { ...config.DEFAULT_HEADERS, ...additionalHeaders };
+    const headers = {
+        ...config.DEFAULT_HEADERS,
+        ...additionalHeaders
+    };
+
     if (config.FUNCTION_HOST_KEY) {
         headers['x-functions-key'] = config.FUNCTION_HOST_KEY;
+    } else {
+        console.error('❌ CRITICAL: No function host key found in apiConfig.js');
     }
+
+    // CHANGED: Automatically attach the API token to every outgoing request
+    // if a valid, non-expired one exists in localStorage.
+    // This means creditService.getBalance and createCheckoutSession are
+    // automatically authenticated without any changes to those files.
     const storedToken = localStorage.getItem('aidaToken');
     const storedExpiry = localStorage.getItem('aidaTokenExpiry');
     const tokenIsValid = storedToken && storedExpiry && new Date() < new Date(storedExpiry);
-    if (tokenIsValid) headers['Authorization'] = `Bearer ${storedToken}`;
+
+    if (tokenIsValid) {
+        headers['Authorization'] = `Bearer ${storedToken}`;
+    }
+
     const controller = new AbortController();
     setTimeout(() => controller.abort(), config.TIMEOUT);
-    return { headers, signal: controller.signal };
+
+    return {
+        headers,
+        signal: controller.signal,
+    };
 };
 
 export default config;

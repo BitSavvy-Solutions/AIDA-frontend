@@ -1,10 +1,11 @@
+// src/components/ChangePasswordModal.jsx
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX, FiKey, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
-import { useVault } from '../contexts/VaultContext';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const ChangePasswordModal = ({ isOpen, onClose }) => {
-    const { changePassword } = useVault();
+    const { changePassword, rememberPassword, hasRememberedPassword } = usePkbSync();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,9 +30,12 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
         try {
             await changePassword(currentPassword, newPassword);
             setDone(true);
+            if (hasRememberedPassword) {
+                rememberPassword(newPassword).catch(console.error);
+            }
         } catch (e) {
             setError(
-                e.message === 'Incorrect password'
+                e.message === 'Current password is incorrect.'
                     ? 'Current password is incorrect'
                     : (e.message || 'Failed to change password')
             );

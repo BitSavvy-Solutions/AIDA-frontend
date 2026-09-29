@@ -1,22 +1,13 @@
-// src/components/SignOutModal.jsx
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import {
-    FiX, FiLogOut, FiAlertTriangle, FiAlertCircle, FiRefreshCw,
-} from 'react-icons/fi';
-import { useAuth } from '../contexts/AuthContext';
-import { useVault } from '../contexts/VaultContext';
-import { useSync } from '../contexts/SyncContext';
-import { vaultDb } from '../services/vaultDb';
-import { clearLocalData, computeLocalSignature } from '../services/snapshot';
-import { db } from '../services/db';
+import { FiX, FiLogOut, FiAlertTriangle, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
+import { usePkbSync } from '../contexts/PkbSyncContext';
+import { db } from '../services/pkbSync';
 
 const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
-    const { logout } = useAuth();
-    const { dek } = useVault();
-    const { syncNow, dismissReload } = useSync();
+    const { removeLocalData } = usePkbSync();
 
-    const [removeLocal, setRemoveLocal] = useState(true); // removal is the default
+    const [removeLocal, setRemoveLocal] = useState(true);
     const [chatCount, setChatCount] = useState(null);
     const [working, setWorking] = useState(false);
     const [error, setError] = useState('');
@@ -27,9 +18,13 @@ const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
         setError('');
         setWorking(false);
         let alive = true;
-        db.chats.getMeta()
-            .then((m) => { if (alive) setChatCount(m.count); })
+
+        db.docs
+            .filter((doc) => doc.kind === 'note' && !doc.deleted)
+            .count()
+            .then((count) => { if (alive) setChatCount(count); })
             .catch(() => {});
+
         return () => { alive = false; };
     }, [isOpen]);
 
@@ -40,49 +35,7 @@ const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
         setError('');
         try {
             if (removeLocal) {
-                // 1. Best effort: push unsynced changes so the server copy is
-                //    as complete as possible before the wipe.
-                if (dek) {
-                    try { await syncNow(); } catch { /* proceed anyway */ }
-                }
-
-                // 2. Clear auth. The sync engine stops once the DEK is dropped.
-                logout();
-
-                // 3. Reset sync bookkeeping BEFORE wiping. On the next sign-in
-                //    the server looks "ahead", so the empty local state can
-                //    never be pushed back up as deletions.
-                const record = await vaultDb.get();
-                if (record) {
-                    await vaultDb.put({
-                        ...record,
-                        lastSyncedVersion: 0,
-                        lastSyncedAt: null,
-                        lastSyncedConfig: {},
-                        lastSyncedChatIds: [],
-                        lastSyncedCounts: { chats: 0, projects: 0 },
-                        tombstones: [],
-                        lastSyncSignature: null,
-                        updatedAt: new Date().toISOString(),
-                    });
-                }
-
-                // 4. Wipe chats, projects, and synced settings from this device.
-                //    The vault record and device key stay, so the next sign-in
-                //    unlocks silently and pulls everything back from the server.
-                await clearLocalData();
-
-                // 5. Remember the signature of the now empty state, so the next
-                //    sync is a clean download instead of a merge and push.
-                try {
-                    const signature = await computeLocalSignature();
-                    const latest = await vaultDb.get();
-                    if (latest) await vaultDb.put({ ...latest, lastSyncSignature: signature });
-                } catch { /* cosmetic only */ }
-
-                dismissReload();
-            } else {
-                logout();
+                await removeLocalData();
             }
             onClose();
             onSignedOut?.();
@@ -91,6 +44,7 @@ const SignOutModal = ({ isOpen, onClose, onSignedOut }) => {
             setWorking(false);
         }
     };
+
 
     return createPortal(
         <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">

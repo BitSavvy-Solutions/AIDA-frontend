@@ -3,12 +3,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
     FiGlobe, FiLock, FiRefreshCw, FiCheck, FiAlertCircle,
-    FiChevronDown, FiKey, FiX, FiHardDrive,
+    FiChevronDown, FiKey, FiX,
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
-import { useVault } from '../contexts/VaultContext';
-import { useSync } from '../contexts/SyncContext';
-import { vaultApi } from '../services/vaultApi';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 import EnableSyncModal from './EnableSyncModal';
 import UnlockSyncModal from './UnlockSyncModal';
 import ForgotPasswordModal from './ForgotPasswordModal';
@@ -26,10 +24,9 @@ const relativeTime = (date) => {
 
 const SyncStatusButton = () => {
     const { isAuthenticated } = useAuth();
-    const { vault, dek, locked, loading, lock, notice, setNotice } = useVault();
     const {
-        status, lastSyncedAt, syncError, needsReload, dismissReload, syncNow,
-    } = useSync();
+        vaultExists, locked, syncStatus, syncNow, lockVault,
+    } = usePkbSync();
 
     const [panelOpen, setPanelOpen] = useState(false);
     const [enableOpen, setEnableOpen] = useState(false);
@@ -37,16 +34,7 @@ const SyncStatusButton = () => {
     const [forgotOpen, setForgotOpen] = useState(false);
     const [disableOpen, setDisableOpen] = useState(false);
     const [changeOpen, setChangeOpen] = useState(false);
-    const [usage, setUsage] = useState(null);
     const menuRef = useRef(null);
-
-    useEffect(() => {
-        if (!loading && vault && !dek) setUnlockOpen(true);
-    }, [vault, dek, loading]);
-
-    useEffect(() => {
-        if (dek) setUnlockOpen(false);
-    }, [dek]);
 
     useEffect(() => {
         if (!panelOpen) return;
@@ -58,32 +46,39 @@ const SyncStatusButton = () => {
     }, [panelOpen]);
 
     useEffect(() => {
-        if (panelOpen && vault?.serverVaultId) {
-            vaultApi.getUsage().then(setUsage).catch(() => {});
-        }
-    }, [panelOpen, vault]);
+        const handler = () => {
+            if (!vaultExists) {
+                setEnableOpen(true);
+            } else if (locked) {
+                setUnlockOpen(true);
+            }
+        };
+        window.addEventListener('aida:open-enable-sync', handler);
+        return () => window.removeEventListener('aida:open-enable-sync', handler);
+    }, [vaultExists, locked]);
 
-    if (!isAuthenticated || loading) return null;
+    if (!isAuthenticated) return null;
+
+    const statusLower = (syncStatus || '').toLowerCase();
+    const isSyncing = statusLower.includes('syncing') || statusLower.includes('uploading') || statusLower.includes('downloading');
+    const isError = statusLower.includes('failed') || statusLower.includes('error');
+    const isSuccess = statusLower.includes('complete');
 
     const StatusIcon = () => {
         if (locked) return <FiLock className="w-3.5 h-3.5 text-amber-500" />;
-        if (status === 'syncing') return <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />;
-        if (status === 'success') return <FiCheck className="w-3.5 h-3.5 text-green-600" />;
-        if (status === 'error') return <FiAlertCircle className="w-3.5 h-3.5 text-red-600" />;
+        if (isSyncing) return <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />;
+        if (isError) return <FiAlertCircle className="w-3.5 h-3.5 text-red-600" />;
+        if (isSuccess) return <FiCheck className="w-3.5 h-3.5 text-green-600" />;
         return <FiGlobe className="w-3.5 h-3.5 text-green-600" />;
     };
 
     const statusText = locked
         ? 'Locked. Enter your password to resume syncing.'
-        : status === 'syncing'
+        : isSyncing
             ? 'Syncing...'
-            : status === 'error'
-                ? (syncError || 'Sync error')
+            : isError
+                ? syncStatus
                 : 'Encrypted sync is on.';
-
-    const usagePercent = usage
-        ? Math.min(100, (usage.usedBytes / usage.quotaBytes) * 100)
-        : 0;
 
     const overlays = (
         <>
@@ -96,44 +91,12 @@ const SyncStatusButton = () => {
             <ForgotPasswordModal isOpen={forgotOpen} onClose={() => setForgotOpen(false)} />
             <DisableSyncModal isOpen={disableOpen} onClose={() => setDisableOpen(false)} />
             <ChangePasswordModal isOpen={changeOpen} onClose={() => setChangeOpen(false)} />
-
-            {notice && (
-                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm">
-                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                        <FiAlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">{notice}</p>
-                        <button onClick={() => setNotice(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                            <FiX className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {needsReload && (
-                <div className="fixed bottom-6 left-6 right-6 md:right-auto z-[3000] max-w-full md:max-w-sm">
-                    <div className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-2xl border bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                        <FiRefreshCw className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-gray-700 dark:text-gray-200 flex-1">
-                            Settings were updated from another device. Reload to apply them.
-                        </p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="text-xs font-semibold text-aida-pink hover:underline flex-shrink-0"
-                        >
-                            Reload
-                        </button>
-                        <button onClick={dismissReload} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                            <FiX className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
         </>
     );
 
     return (
         <>
-            {!vault ? (
+            {!vaultExists ? (
                 <button
                     type="button"
                     onClick={() => setEnableOpen(true)}
@@ -160,35 +123,11 @@ const SyncStatusButton = () => {
                             <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
                                 <div className="flex items-center gap-2">
                                     <StatusIcon />
-                                    <span className={`text-xs font-medium ${status === 'error' && !locked ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}`}>
+                                    <span className={`text-xs font-medium ${isError && !locked ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}`}>
                                         {statusText}
                                     </span>
                                 </div>
-                                {lastSyncedAt && !locked && (
-                                    <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400 ml-6">
-                                        Last synced: {relativeTime(lastSyncedAt)}
-                                    </p>
-                                )}
                             </div>
-
-                            {usage && (
-                                <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <FiHardDrive className="w-3.5 h-3.5 text-gray-400" />
-                                        <span className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
-                                            {(usage.usedBytes / (1024 * 1024)).toFixed(1)} MB of {(usage.quotaBytes / (1024 * 1024)).toFixed(0)} MB used
-                                        </span>
-                                    </div>
-                                    <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-1.5">
-                                        <div
-                                            className={`h-1.5 rounded-full transition-all ${
-                                                usagePercent > 90 ? 'bg-red-500' : usagePercent > 70 ? 'bg-amber-500' : 'bg-aida-pink'
-                                            }`}
-                                            style={{ width: `${usagePercent}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
 
                             {locked ? (
                                 <button
@@ -204,10 +143,10 @@ const SyncStatusButton = () => {
                                     <button
                                         type="button"
                                         onClick={() => { syncNow(); setPanelOpen(false); }}
-                                        disabled={status === 'syncing'}
+                                        disabled={isSyncing}
                                         className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-40 transition-colors"
                                     >
-                                        <FiRefreshCw className={`w-4 h-4 ${status === 'syncing' ? 'animate-spin' : ''}`} />
+                                        <FiRefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                                         Sync Now
                                     </button>
                                     <button
@@ -220,7 +159,7 @@ const SyncStatusButton = () => {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => { lock(); setPanelOpen(false); }}
+                                        onClick={() => { lockVault(); setPanelOpen(false); }}
                                         className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
                                     >
                                         <FiLock className="w-4 h-4" />

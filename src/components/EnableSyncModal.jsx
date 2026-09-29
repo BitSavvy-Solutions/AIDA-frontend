@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+// src/components/EnableSyncModal.jsx
+import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
     FiX, FiGlobe, FiDownload, FiCopy, FiCheck,
     FiEye, FiEyeOff, FiAlertTriangle,
 } from 'react-icons/fi';
-import { useVault } from '../contexts/VaultContext';
-import { db } from '../services/db';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const EnableSyncModal = ({ isOpen, onClose }) => {
-    const { enableSync } = useVault();
+    const { createVault, rememberPassword } = usePkbSync();
     const [step, setStep] = useState(1);
     const [agreed, setAgreed] = useState(false);
     const [password, setPassword] = useState('');
@@ -16,24 +16,10 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [recoveryKey, setRecoveryKey] = useState('');
     const [savedKey, setSavedKey] = useState(false);
-    const [adoptedInfo, setAdoptedInfo] = useState(null);
-    const [counts, setCounts] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
-
-    useEffect(() => {
-        if (!isOpen) return;
-        let alive = true;
-        (async () => {
-            try {
-                const meta = await db.chats.getMeta();
-                const projects = await db.projects.toArray();
-                if (alive) setCounts({ chats: meta.count, messages: meta.msgs, projects: projects.length });
-            } catch { /* counts are informational only */ }
-        })();
-        return () => { alive = false; };
-    }, [isOpen]);
+    const [rememberPasswordChecked, setRememberPasswordChecked] = useState(false);
 
     if (!isOpen) return null;
 
@@ -62,14 +48,12 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
         setLoading(true);
         setError('');
         try {
-            const result = await enableSync({ password });
-            if (result.adopted) {
-                setAdoptedInfo(result);
-                setStep(4);
-            } else {
-                setRecoveryKey(result.recoveryKey);
-                setStep(3);
+            const result = await createVault(password);
+            if (rememberPasswordChecked) {
+                rememberPassword(password).catch(console.error);
             }
+            setRecoveryKey(result.recoveryKey);
+            setStep(3);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -82,7 +66,7 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'aida-recovery-key.txt';
+        a.download = 'aida-pkb-recovery-key.txt';
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -101,12 +85,10 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
         setShowPassword(false);
         setRecoveryKey('');
         setSavedKey(false);
-        setAdoptedInfo(null);
+        setRememberPasswordChecked(false);
         setError('');
         onClose();
     };
-
-    const hasLocalData = counts && (counts.chats > 0 || counts.projects > 0);
 
     return createPortal(
         <div className="fixed inset-0 z-[2000] flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm p-4">
@@ -134,7 +116,6 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
                                 <li>You need your password or recovery key to read the backup on a new device.</li>
                                 <li>If you forget both, the server backup becomes unreadable. Your local data on this device always stays intact.</li>
                                 <li>You are responsible for the content you store. Do not store illegal, harmful, or infringing material.</li>
-                                <li>The free tier includes 500 MB of encrypted storage.</li>
                             </ul>
 
                             <label className="flex items-start gap-3 pt-1 cursor-pointer">
@@ -161,14 +142,6 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
 
                     {step === 2 && (
                         <div className="space-y-4">
-                            {hasLocalData && (
-                                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
-                                    You have {counts.chats} chat(s) with {counts.messages} message(s)
-                                    {counts.projects > 0 ? ` and ${counts.projects} project(s)` : ''} on
-                                    this device. They will be encrypted and synced to the server.
-                                </div>
-                            )}
-
                             <div>
                                 <label className="block text-sm font-medium text-aida-dark mb-1">Password</label>
                                 <div className="relative">
@@ -204,9 +177,20 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
                                 />
                             </div>
 
+                            <label className="flex items-start gap-3 pt-1 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={rememberPasswordChecked}
+                                    onChange={(e) => setRememberPasswordChecked(e.target.checked)}
+                                    className="mt-1 w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
+                                />
+                                <span className="text-sm text-aida-dark">
+                                    Remember this password on this device
+                                </span>
+                            </label>
+
                             <p className="text-xs text-aida-text-muted">
-                                After setup, changes are encrypted and synced automatically every couple of
-                                minutes, and whenever this tab becomes visible.
+                                After setup, changes are encrypted and synced automatically every few minutes.
                             </p>
 
                             {error && <p className="text-sm text-red-500">{error}</p>}
@@ -279,26 +263,6 @@ const EnableSyncModal = ({ isOpen, onClose }) => {
                                 onClick={reset}
                                 disabled={!savedKey}
                                 className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                            >
-                                Done
-                            </button>
-                        </div>
-                    )}
-
-                    {step === 4 && adoptedInfo && (
-                        <div className="space-y-4">
-                            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                                <p className="text-sm text-blue-700 dark:text-blue-300">
-                                    This account already had encrypted sync set up on another device, so this
-                                    device has been connected to it.
-                                    {adoptedInfo.unlocked
-                                        ? ' Your password worked, syncing will start now.'
-                                        : ' Enter your original password in the unlock prompt to start syncing.'}
-                                </p>
-                            </div>
-                            <button
-                                onClick={reset}
-                                className="w-full px-4 py-2.5 bg-aida-pink text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
                             >
                                 Done
                             </button>

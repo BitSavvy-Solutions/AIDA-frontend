@@ -1,15 +1,16 @@
+// src/components/UnlockSyncModal.jsx
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FiX, FiLock, FiAlertCircle, FiEye, FiEyeOff } from 'react-icons/fi';
-import { useVault } from '../contexts/VaultContext';
+import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
-    const { unlock } = useVault();
+    const { unlockVault, rememberPassword } = usePkbSync();
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const [remember, setRemember] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [rememberPasswordChecked, setRememberPasswordChecked] = useState(false);
 
     if (!isOpen) return null;
 
@@ -17,15 +18,14 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
         setLoading(true);
         setError('');
         try {
-            await unlock(password, { rememberDevice: remember });
+            await unlockVault(password);
+            if (rememberPasswordChecked) {
+                rememberPassword(password).catch(console.error);
+            }
             setPassword('');
             onClose();
         } catch (e) {
-            setError(
-                e.message === 'Incorrect password'
-                    ? 'Incorrect password'
-                    : (e.message || 'Failed to unlock')
-            );
+            setError(e.message === 'Wrong password or corrupt vault.' ? 'Incorrect password' : (e.message || 'Failed to unlock'));
         } finally {
             setLoading(false);
         }
@@ -69,14 +69,16 @@ const UnlockSyncModal = ({ isOpen, onClose, onForgotPassword }) => {
                         </button>
                     </div>
 
-                    <label className="flex items-center gap-2 text-sm text-aida-text-muted cursor-pointer select-none">
+                    <label className="flex items-start gap-3 pt-1 cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={remember}
-                            onChange={(e) => setRemember(e.target.checked)}
-                            className="w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
+                            checked={rememberPasswordChecked}
+                            onChange={(e) => setRememberPasswordChecked(e.target.checked)}
+                            className="mt-1 w-4 h-4 rounded border-aida-border text-aida-pink focus:ring-aida-pink"
                         />
-                        Stay unlocked on this device
+                        <span className="text-sm text-aida-dark">
+                            Remember this password on this device
+                        </span>
                     </label>
 
                     {error && (
