@@ -4,8 +4,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
     FiSearch, FiChevronRight, FiCalendar, FiTag, FiX,
     FiMessageSquare, FiClock, FiFilter, FiRefreshCw, FiChevronDown,
-    FiCheckSquare, FiSquare, FiPlus, FiCheck, FiLoader, FiFile,
-    FiTrash2, FiDownload, FiLock, FiKey,
+    FiCheckSquare, FiSquare, FiPlus, FiCheck, FiLoader,
+    FiTrash2, FiLock, FiKey,
 } from 'react-icons/fi';
 
 import { useAuth } from '../contexts/AuthContext';
@@ -221,7 +221,6 @@ const NoteCard = React.memo(function NoteCard({
     selectionMode,
     isSelected,
     isExpanded,
-    onOpen,
     onToggleSelected,
     onEnterSelection,
     onToggleMatches,
@@ -238,8 +237,22 @@ const NoteCard = React.memo(function NoteCard({
         <div
             role="button"
             tabIndex={0}
-            onClick={() => (selectionMode ? onToggleSelected(note.id) : onOpen(note))}
-            onKeyDown={(e) => { if (e.key === 'Enter') selectionMode ? onToggleSelected(note.id) : onOpen(note); }}
+            onClick={() => {
+                if (selectionMode) {
+                    onToggleSelected(note.id);
+                } else {
+                    window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: note.id } }));
+                }
+            }}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                    if (selectionMode) {
+                        onToggleSelected(note.id);
+                    } else {
+                        window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: note.id } }));
+                    }
+                }
+            }}
             className={`w-full text-left p-4 rounded-xl border transition-all group cursor-pointer ${isSelected ? 'border-aida-pink/60 bg-aida-pink/5 shadow-sm' : 'border-aida-border bg-aida-card hover:border-aida-pink/30 hover:shadow-sm'}`}
         >
             <div className="flex items-start justify-between gap-4">
@@ -407,173 +420,6 @@ const BulkTagModal = ({ isOpen, onClose, tags, selectedNoteIds, onApply, onCreat
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Preview modal
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const ResourcePreview = ({ resource }) => {
-    const [url, setUrl] = useState(null);
-
-    useEffect(() => {
-        if (!resource?.blob) return;
-        const objectUrl = URL.createObjectURL(resource.blob);
-        setUrl(objectUrl);
-        return () => URL.revokeObjectURL(objectUrl);
-    }, [resource?.id, resource?.blob]);
-
-    if (!resource) return null;
-
-    const download = () => {
-        if (!resource.blob) return;
-        const objectUrl = URL.createObjectURL(resource.blob);
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = resource.title || 'download';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
-    };
-
-    const isImage = resource.mimeType?.startsWith('image/');
-
-    return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <FiFile className="w-6 h-6 text-aida-text-muted" />
-                    <div>
-                        <div className="font-medium text-aida-dark">{resource.title || 'Untitled'}</div>
-                        <div className="text-xs text-aida-text-muted">{resource.mimeType} • {formatBytes(resource.size)}</div>
-                    </div>
-                </div>
-                <button onClick={download} className="flex items-center gap-2 rounded-lg border border-aida-border px-3 py-1.5 text-sm text-aida-dark hover:bg-aida-light">
-                    <FiDownload className="w-4 h-4" /> Download
-                </button>
-            </div>
-            {isImage && url && (
-                <img src={url} alt={resource.title} className="max-w-full rounded-lg border border-aida-border" />
-            )}
-        </div>
-    );
-};
-
-const ChatMessage = ({ message, onOpenResource }) => {
-    const isUser = message.sender === 'user';
-
-    const attachments = []
-        .concat(message.images || [])
-        .concat(message.attachments || [])
-        .concat(message.files || [])
-        .concat(message.image ? [message.image] : [])
-        .concat(message.attachment ? [message.attachment] : []);
-
-    return (
-        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm ${isUser ? 'bg-aida-pink text-white rounded-br-md' : 'bg-aida-light border border-aida-border text-aida-dark rounded-bl-md'}`}>
-                {message.text && <div className="whitespace-pre-wrap">{message.text}</div>}
-
-                {message.reasoning && (
-                    <details className="mt-2">
-                        <summary className="text-[10px] opacity-70 cursor-pointer select-none">Reasoning</summary>
-                        <div className="mt-1 text-xs opacity-80 whitespace-pre-wrap border-t border-current/20 pt-2">{message.reasoning}</div>
-                    </details>
-                )}
-
-                {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                        {attachments.map((att, i) => {
-                            if (!att?.resourceId) return (
-                                <span key={i} className="text-xs opacity-70 flex items-center gap-1"><FiFile className="w-3 h-3" /> {att.name}</span>
-                            );
-                            return (
-                                <button
-                                    key={i}
-                                    onClick={() => onOpenResource(att.resourceId)}
-                                    className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/10 hover:bg-black/20 text-xs transition-colors"
-                                >
-                                    <FiFile className="w-3 h-3" /> {att.name || 'Attachment'}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
-
-                <div className={`mt-1 text-[10px] opacity-60 ${isUser ? 'text-right' : 'text-left'}`}>
-                    {new Date(message.timestamp || message.createdAt || message.time).toLocaleString()}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const PreviewModal = ({ note, resource, tags, onClose }) => {
-    const [activeResource, setActiveResource] = useState(null);
-
-    useEffect(() => {
-        setActiveResource(resource || null);
-    }, [resource]);
-
-    if (!note && !activeResource) return null;
-
-    const title = note?.title || activeResource?.title || 'Preview';
-    const { kind, messages } = note ? parseNoteContent(note) : { kind: 'resource', messages: [] };
-    const isChat = kind === 'chat';
-
-    const openResource = async (resourceId) => {
-        const doc = await pkbDb.docs.get(resourceId);
-        if (doc && !doc.deleted) setActiveResource(doc);
-    };
-
-    const backToNote = () => setActiveResource(null);
-
-    return (
-        <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-aida-border bg-aida-card shadow-2xl">
-                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-aida-border bg-aida-card p-4">
-                    <h2 className="text-lg font-bold text-aida-dark truncate pr-4">{title}</h2>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                        {activeResource && note && (
-                            <button onClick={backToNote} className="rounded-lg border border-aida-border px-3 py-1.5 text-sm text-aida-dark hover:bg-aida-light">Back</button>
-                        )}
-                        <button onClick={onClose} className="rounded-lg border border-aida-border p-2 text-aida-text-muted hover:bg-aida-light"><FiX className="w-4 h-4" /></button>
-                    </div>
-                </div>
-
-                <div className="p-6">
-                    {activeResource ? (
-                        <ResourcePreview resource={activeResource} />
-                    ) : isChat ? (
-                        <div className="space-y-4">
-                            {messages.map((msg, i) => (
-                                <ChatMessage key={msg.id || i} message={msg} onOpenResource={openResource} />
-                            ))}
-                            {messages.length === 0 && <p className="text-sm text-aida-text-muted">No messages.</p>}
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {note.content && <div className="whitespace-pre-wrap text-sm text-aida-dark">{note.content}</div>}
-                            {note.resourceIds?.length > 0 && (
-                                <div className="space-y-2">
-                                    <h3 className="text-sm font-semibold text-aida-dark">Attachments</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {note.resourceIds.map((id) => {
-                                            const tag = tags.find((t) => t.id === id);
-                                            return (
-                                                <button key={id} onClick={() => openResource(id)} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-aida-border text-sm text-aida-dark hover:bg-aida-light">
-                                                    <FiFile className="w-4 h-4" /> {tag?.title || id}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // Main page
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -597,7 +443,6 @@ const PkbPage = () => {
     const [selectedNoteIds, setSelectedNoteIds] = useState(() => new Set());
     const [expandedMatches, setExpandedMatches] = useState(() => new Set());
     const [tagModalOpen, setTagModalOpen] = useState(false);
-    const [previewNote, setPreviewNote] = useState(null);
     const [toast, setToast] = useState(null);
 
     const [page, setPage] = useState(1);
@@ -608,7 +453,6 @@ const PkbPage = () => {
     useEffect(() => {
         Object.keys(localStorage).filter((k) => k.startsWith('pkbVaultId:')).forEach((k) => localStorage.removeItem(k));
     }, []);
-
 
     useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(searchQuery), 200);
@@ -888,10 +732,6 @@ const PkbPage = () => {
         requestSync(500);
     }, [selectedNoteIds, exitSelection, requestSync]);
 
-    const openPreview = useCallback((note) => {
-        setPreviewNote(note);
-    }, []);
-
     const toggleMatchesExpanded = useCallback((id) => {
         setExpandedMatches((prev) => {
             const next = new Set(prev);
@@ -1117,7 +957,6 @@ const PkbPage = () => {
                                             selectionMode={selectionMode}
                                             isSelected={selectedNoteIds.has(note.id)}
                                             isExpanded={expandedMatches.has(note.id)}
-                                            onOpen={openPreview}
                                             onToggleSelected={toggleNoteSelected}
                                             onEnterSelection={enterSelection}
                                             onToggleMatches={toggleMatchesExpanded}
@@ -1146,14 +985,6 @@ const PkbPage = () => {
                 onApply={handleApplyTags}
                 onCreate={handleCreateTag}
             />
-
-            {previewNote && (
-                <PreviewModal
-                    note={previewNote}
-                    tags={allTags}
-                    onClose={() => setPreviewNote(null)}
-                />
-            )}
 
             {selectionMode && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1500] w-max max-w-[calc(100vw-2rem)]">
