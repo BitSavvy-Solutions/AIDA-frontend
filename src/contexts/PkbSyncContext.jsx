@@ -89,6 +89,7 @@ export const PkbSyncProvider = ({ children }) => {
     const [vaultExists, setVaultExists] = useState(false);
     const [dek, setDek] = useState(null);
     const [syncStatus, setSyncStatus] = useState('');
+    const [syncProgress, setSyncProgress] = useState(null);
     const [loading, setLoading] = useState(true);
     const [rememberedPw, setRememberedPw] = useState(
         () => Boolean(localStorage.getItem(REMEMBER_KEY))
@@ -99,6 +100,10 @@ export const PkbSyncProvider = ({ children }) => {
     const setStatus = useCallback((message) => {
         statusRef.current = message;
         setSyncStatus(message);
+    }, []);
+
+    const setProgress = useCallback((progress) => {
+        setSyncProgress(progress);
     }, []);
 
     // Check whether a vault exists for this account
@@ -134,16 +139,20 @@ export const PkbSyncProvider = ({ children }) => {
             return;
         }
 
-        startPkbSync({ token: apiToken, dek, onStatus: setStatus });
-        return () => stopPkbSync();
-    }, [isAuthenticated, apiToken, dek, setStatus]);
+        startPkbSync({
+            token: apiToken,
+            dek,
+            onStatus: setStatus,
+            onProgress: setProgress,
+        });
 
-    
+        return () => stopPkbSync();
+    }, [isAuthenticated, apiToken, dek, setStatus, setProgress]);
+
     const forgetPassword = useCallback(() => {
         localStorage.removeItem(REMEMBER_KEY);
         setRememberedPw(false);
     }, []);
-
 
     // Clear remembered password on sign out
     useEffect(() => {
@@ -164,7 +173,6 @@ export const PkbSyncProvider = ({ children }) => {
         }
     }, [apiToken, vaultExists, dek, forgetPassword]);
 
-
     // Try to auto-unlock when we know a vault exists and have a token
     useEffect(() => {
         if (loading || !vaultExists || dek || !apiToken) return;
@@ -182,7 +190,6 @@ export const PkbSyncProvider = ({ children }) => {
         }
     }, [apiToken]);
 
-    
     const createVault = useCallback(async (password) => {
         if (!apiToken) throw new Error('Not authenticated');
         const result = await createPkbVault(apiToken, password);
@@ -215,10 +222,10 @@ export const PkbSyncProvider = ({ children }) => {
 
     const lockVault = useCallback(() => {
         stopPkbSync();
-        forgetPassword(); 
+        forgetPassword();
         setDek(null);
         setStatus('Sync locked.');
-    }, [setStatus]);
+    }, [setStatus, forgetPassword]);
 
     const disableSync = useCallback(async () => {
         if (!apiToken) throw new Error('Not authenticated');
@@ -249,6 +256,7 @@ export const PkbSyncProvider = ({ children }) => {
         locked: vaultExists && !dek,
         loading,
         syncStatus,
+        syncProgress,
         statusText: statusRef,
         createVault,
         unlockVault,
