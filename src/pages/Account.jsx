@@ -4,6 +4,7 @@ import config from '../config/apiConfig';
 import DateRangePicker from '../components/DateRangePicker';
 import BuyCreditsModal from '../components/BuyCreditsModal';
 import { useAuth } from '../contexts/AuthContext';
+import StorageMeter from '../components/StorageMeter';
 
 export default function Account() {
     const { user } = useAuth();
@@ -175,6 +176,7 @@ export default function Account() {
                                 Add Credits
                             </button>
                         </div>
+                        <StorageMeter />
                     </div>
                 )}
 
