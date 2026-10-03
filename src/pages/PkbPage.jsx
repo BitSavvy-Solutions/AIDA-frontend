@@ -98,15 +98,17 @@ const parseNoteContent = (note) => {
 };
 
 const noteLastActivity = (note) => {
-    let ts = new Date(note.modified || note.created || 0).getTime();
     if (note.kind === 'note') {
         const { messages } = parseNoteContent(note);
+        let ts = 0;
         for (const m of messages) {
             const t = new Date(m.timestamp || m.createdAt || m.time || 0).getTime();
             if (Number.isFinite(t)) ts = Math.max(ts, t);
         }
+        // Fall back to created time if the chat has no messages with timestamps
+        return ts || new Date(note.created || 0).getTime();
     }
-    return ts;
+    return new Date(note.modified || note.created || 0).getTime();
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -321,7 +323,7 @@ const NoteCard = React.memo(function NoteCard({
             )}
 
             <div className="flex items-center gap-4 mt-3 text-[11px] text-aida-text-muted/60">
-                <span className="flex items-center gap-1"><FiClock className="w-3 h-3" /> {formatRelativeTime(note.modified || note.created)}</span>
+            <span className="flex items-center gap-1"><FiClock className="w-3 h-3" /> {formatRelativeTime(noteLastActivity(note))}</span>
                 {isChat && <span>{msgCount} message{msgCount !== 1 ? 's' : ''}</span>}
                 {!isChat && note.resourceIds?.length > 0 && <span>{note.resourceIds.length} attachment{note.resourceIds.length !== 1 ? 's' : ''}</span>}
                 {hasQuery && matches.length > 0 && (
@@ -535,7 +537,7 @@ const PkbPage = () => {
                     const mb = parseNoteContent(b).messages.length;
                     return mb - ma;
                 }
-                default: return (b.modified || '').localeCompare(a.modified || '');
+                default: return noteLastActivity(b) - noteLastActivity(a);
             }
         });
     }, [rawNotes, dateRange, selectedTagIds, debouncedQuery, sort, searchIndex]);
