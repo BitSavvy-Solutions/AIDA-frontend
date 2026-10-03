@@ -1347,7 +1347,9 @@ export async function syncNow() {
         setStatus('Sync complete');
 
         setTimeout(() => {
-            resetProgress();
+            if (engine.progress.phase === 'complete') {
+                resetProgress();
+            }
         }, 3000);
     } catch (error) {
         console.error('PKB sync failed:', error);
