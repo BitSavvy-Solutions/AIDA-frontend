@@ -227,7 +227,9 @@ const NoteCard = React.memo(function NoteCard({
 }) {
     const { kind, messages } = parseNoteContent(note);
     const isChat = kind === 'chat';
-    const firstUser = isChat ? messages.find((m) => m.sender === 'user') : null;
+    const firstUser = isChat
+        ? messages.find((m) => m.sender === 'user' && (m.text || '').trim())
+        : null;
     const preview = firstUser?.text?.slice(0, 150) || (note.content || '').slice(0, 150);
     const msgCount = messages.length;
     const visibleMatches = isExpanded ? matches : matches.slice(0, MAX_VISIBLE_MATCHES);

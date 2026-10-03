@@ -9,7 +9,7 @@ import config from '../config/apiConfig';
 export const db = new Dexie('pkb-local');
 
 db.version(1).stores({
-    docs: 'id, kind, title, modified, *tagIds, *resourceIds',
+    docs: 'id, kind, title, modified, dirty, deleted, *tagIds, *resourceIds',
     meta: 'key',
 });
 
@@ -332,7 +332,7 @@ async function decryptBlobFromBuffer(dek, buffer, mimeType) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Vault backend API (app‑scoped, no vaultId)
+// Vault backend API (app-scoped, no vaultId)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const vaultBaseUrl = () => `${config.VAULT_URL}/vault`;
@@ -413,7 +413,7 @@ export async function getPkbVaultStatus(token) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Sync endpoint helpers (app‑scoped, relative keys)
+// Sync endpoint helpers (app-scoped, relative keys)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function listAllObjects(token) {
@@ -744,6 +744,7 @@ function cleanDocForSync(doc) {
     delete clone.deleted;
     delete clone.syncTime;
     delete clone.remoteModified;
+    delete clone.lastSyncedModified;
     delete clone.blobDirty;
     delete clone.blobSyncTime;
     delete clone.blobRemoteModified;
@@ -791,6 +792,7 @@ export async function clearSyncMetadataForAllDocs() {
             updateJobs.push(db.docs.update(doc.id, {
                 syncTime: null,
                 remoteModified: null,
+                lastSyncedModified: null,
                 blobSyncTime: null,
                 blobRemoteModified: null,
             }));
@@ -827,6 +829,49 @@ async function addConflictCopy(doc, label) {
 
     await db.docs.add(copy);
 }
+
+// Chat notes merge at the message level instead of creating conflict copies.
+const messageTs = (m) => {
+    const t = Date.parse(m?.timestamp || m?.createdAt || m?.time || '');
+    return Number.isFinite(t) ? t : 0;
+};
+
+const unionIds = (a = [], b = []) => [...new Set([...a, ...b])];
+
+const tryMergeChatDocs = (localDoc, remoteDoc) => {
+    try {
+        const local = JSON.parse(localDoc.content || '{}');
+        const remote = JSON.parse(remoteDoc.content || '{}');
+
+        if (local.schema !== 'aida/chat' || remote.schema !== 'aida/chat') return null;
+        if (!Array.isArray(local.messages) || !Array.isArray(remote.messages)) return null;
+
+        const all = [...local.messages, ...remote.messages];
+        if (!all.every((m) => m && m.id != null)) return null;
+
+        const byId = new Map();
+        for (const m of all) {
+            const prev = byId.get(m.id);
+            if (!prev || messageTs(m) >= messageTs(prev)) byId.set(m.id, m);
+        }
+        const messages = [...byId.values()].sort((a, b) => messageTs(a) - messageTs(b));
+
+        const localModified = timestamp(localDoc.modified);
+        const remoteModified = timestamp(remoteDoc.modified);
+        const newerDoc = remoteModified >= localModified ? remoteDoc : localDoc;
+        const base = remoteModified >= localModified ? remote : local;
+
+        return {
+            content: JSON.stringify({ ...base, messages }, null, 2),
+            title: newerDoc.title || localDoc.title,
+            tagIds: unionIds(localDoc.tagIds, remoteDoc.tagIds),
+            resourceIds: unionIds(localDoc.resourceIds, remoteDoc.resourceIds),
+            modified: new Date(Math.max(localModified, remoteModified, Date.now())).toISOString(),
+        };
+    } catch {
+        return null;
+    }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Sync engine (no vaultId)
@@ -946,12 +991,16 @@ export async function syncNow() {
 
             let shouldUpload = true;
 
-            // Conflict check.
-            if (
+            // A remote object may contain changes we have not yet seen if
+            // its server lastModified is newer than the version we last
+            // acknowledged, or if we have never acknowledged a remote
+            // version at all.
+            const remoteMayHaveChanged =
                 remote &&
-                doc.remoteModified &&
-                isNewerRemote(remote.lastModified, doc.remoteModified)
-            ) {
+                (!doc.remoteModified ||
+                    isNewerRemote(remote.lastModified, doc.remoteModified));
+
+            if (remoteMayHaveChanged) {
                 try {
                     const remoteDoc = await downloadDoc(
                         engine.token,
@@ -961,39 +1010,64 @@ export async function syncNow() {
                     if (remoteDoc) {
                         const localModified = timestamp(doc.modified);
                         const remoteModified = timestamp(remoteDoc.modified);
+                        const lastSynced = timestamp(doc.lastSyncedModified);
 
-                        if (remoteModified > localModified) {
-                            if (doc.kind !== 'resource') {
-                                await addConflictCopy(doc, '(local conflict)');
-                            }
-
-                            const accepted = {
-                                ...remoteDoc,
-                                id: doc.id,
-                                deleted: 0,
-                                dirty: 0,
-                                syncTime: now,
-                                remoteModified: remote.lastModified,
-                            };
-
-                            if (doc.kind === 'resource') {
-                                accepted.blob = doc.blob;
-                                accepted.blobDirty = doc.blobDirty;
-                                accepted.blobSyncTime = doc.blobSyncTime;
-                                accepted.blobRemoteModified =
-                                    remoteByKey.get(blobKey(doc.id))
-                                        ?.lastModified ||
-                                    doc.blobRemoteModified;
-                            }
-
-                            await db.docs.put(accepted);
-                            shouldUpload = false;
+                        if (remoteModified <= lastSynced) {
+                            // The remote object is our own previous upload
+                            // (or something older). Not a conflict.
                         } else {
-                            if (doc.kind !== 'resource') {
-                                await addConflictCopy(
-                                    remoteDoc,
-                                    '(remote conflict)'
-                                );
+                            const merged = tryMergeChatDocs(doc, remoteDoc);
+
+                            if (merged) {
+                                // Chat notes merge at the message level.
+                                // Both sides keep every message and no
+                                // conflict copy is created.
+                                await db.docs.update(doc.id, {
+                                    content: merged.content,
+                                    title: merged.title,
+                                    tagIds: merged.tagIds,
+                                    resourceIds: merged.resourceIds,
+                                    modified: merged.modified,
+                                });
+                                doc.content = merged.content;
+                                doc.title = merged.title;
+                                doc.tagIds = merged.tagIds;
+                                doc.resourceIds = merged.resourceIds;
+                                doc.modified = merged.modified;
+                            } else if (remoteModified > localModified) {
+                                if (doc.kind !== 'resource') {
+                                    await addConflictCopy(doc, '(local conflict)');
+                                }
+
+                                const accepted = {
+                                    ...remoteDoc,
+                                    id: doc.id,
+                                    deleted: 0,
+                                    dirty: 0,
+                                    syncTime: now,
+                                    remoteModified: remote.lastModified,
+                                    lastSyncedModified: remoteDoc.modified,
+                                };
+
+                                if (doc.kind === 'resource') {
+                                    accepted.blob = doc.blob;
+                                    accepted.blobDirty = doc.blobDirty;
+                                    accepted.blobSyncTime = doc.blobSyncTime;
+                                    accepted.blobRemoteModified =
+                                        remoteByKey.get(blobKey(doc.id))
+                                            ?.lastModified ||
+                                        doc.blobRemoteModified;
+                                }
+
+                                await db.docs.put(accepted);
+                                shouldUpload = false;
+                            } else {
+                                if (doc.kind !== 'resource') {
+                                    await addConflictCopy(
+                                        remoteDoc,
+                                        '(remote conflict)'
+                                    );
+                                }
                             }
                         }
                     }
@@ -1016,10 +1090,19 @@ export async function syncNow() {
 
             uploadedKeys.add(key);
 
+            // Stamp the doc with the moment this upload finished. The
+            // server records almost the same instant as the object's
+            // lastModified, so the next sync can tell "unchanged since my
+            // upload" apart from "changed by someone else". Previously this
+            // stored the lastModified of the version BEFORE the upload,
+            // which made every doc look remotely changed on the next sync.
+            const uploadedAt = new Date().toISOString();
+
             const update = {
                 dirty: 0,
-                syncTime: now,
-                remoteModified: remote?.lastModified || now,
+                syncTime: uploadedAt,
+                remoteModified: uploadedAt,
+                lastSyncedModified: doc.modified,
             };
 
             if (
@@ -1043,10 +1126,11 @@ export async function syncNow() {
 
                 uploadedKeys.add(resourceBlobKey);
 
+                const blobUploadedAt = new Date().toISOString();
+
                 update.blobDirty = 0;
-                update.blobSyncTime = now;
-                update.blobRemoteModified =
-                    remoteByKey.get(resourceBlobKey)?.lastModified || now;
+                update.blobSyncTime = blobUploadedAt;
+                update.blobRemoteModified = blobUploadedAt;
             }
 
             await db.docs.update(doc.id, update);
@@ -1096,6 +1180,7 @@ export async function syncNow() {
                 dirty: 0,
                 syncTime: now,
                 remoteModified: remote.lastModified,
+                lastSyncedModified: remoteDoc.modified,
             };
 
             if (local && local.kind === 'resource') {

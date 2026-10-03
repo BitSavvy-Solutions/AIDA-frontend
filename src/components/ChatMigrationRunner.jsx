@@ -4,34 +4,36 @@ import { migrateWidgetChatsToPkb } from '../services/migrateChatsToPkb';
 import { usePkbSync } from '../contexts/PkbSyncContext';
 
 const ChatMigrationRunner = () => {
-  const { requestSync } = usePkbSync();
+    const { requestSync } = usePkbSync();
 
-  useEffect(() => {
-    let cancelled = false;
+    useEffect(() => {
+        let cancelled = false;
 
-    const run = () =>
-      migrateWidgetChatsToPkb()
-        .then((result) => {
-          if (cancelled) return;
-          console.info('[chats-migration] result:', result);
-          if (!result || result.skipped) return;
-          // Trigger a sync so the newly created notes are uploaded
-          requestSync(1000);
-        })
-        .catch((e) => console.error('[chats-migration] failed:', e));
+        migrateWidgetChatsToPkb()
+            .then((result) => {
+                if (cancelled) return;
+                console.info('[chats-migration] result:', result);
 
-    // Run immediately on mount
-    run();
+                // Only sync when the migration actually imported
+                // something. Skipped runs do not trigger a sync.
+                if (!result || result.skipped) return;
+                if (
+                    (result.chats || 0) > 0 ||
+                    (result.tagsCreated || 0) > 0 ||
+                    (result.resourcesCreated || 0) > 0 ||
+                    (result.resourcesFilled || 0) > 0
+                ) {
+                    requestSync(1000);
+                }
+            })
+            .catch((e) => console.error('[chats-migration] failed:', e));
 
-    // Run again every 60 seconds to catch any new chats
-    const id = setInterval(run, 60000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [requestSync]);
+        return () => {
+            cancelled = true;
+        };
+    }, [requestSync]);
 
-  return null; // no UI
+    return null;
 };
 
 export default ChatMigrationRunner;

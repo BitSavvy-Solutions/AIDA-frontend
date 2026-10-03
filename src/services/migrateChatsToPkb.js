@@ -1,6 +1,6 @@
 // src/services/migrateChatsToPkb.js
 //
-// Incremental migration from the old widget history database
+// One-shot migration from the old widget history database
 // (AidaWidgetDB: chats, projects) into the PKB local database
 // (pkb-local: docs) so chat history can be encrypted and synced
 // by pkbSync like any other PKB content.
@@ -11,13 +11,9 @@
 //                       { schema: 'aida/chat', version: 1, messages: [...] }
 //                     Messages keep their original shape (id, sender,
 //                     text, reasoning, meta, model, ...) with one
-//                     exception: every attachment (images, attachments,
-//                     files, or singular image / attachment) is replaced
-//                     by a small reference object:
+//                     exception: every attachment is replaced by a small
+//                     reference object:
 //                       { resourceId, name, size, mimeType, type, id? }
-//                     The original file name therefore travels with the
-//                     message even though the resource document itself
-//                     is identified only by its content hash.
 //   widget project -> PKB tag (kind: 'tag', id: tag_mig_<slug>)
 //   attachment     -> PKB resource (kind: 'resource', id: res_<sha256>)
 //                     title is the first seen attachment name and blob
@@ -25,21 +21,13 @@
 //                     resolve to the same document, so vault objects are
 //                     linked, never re-uploaded.
 //
-// Every run reconciles:
-//   - chats without a note are created
-//   - migration owned tags (tag_mig_*) follow widget projects, tags the
-//     user created inside PKB are left untouched
-//   - notes whose source revision changed, or that still carry an older
-//     content format, are rebuilt, unless they were edited inside PKB
-//     (pkbEdited flag)
-//
-// The old database is only read, never modified.
+// This migration runs exactly once. If the PKB docs table already has
+// any rows, it exits immediately and never runs again.
 
-import { db as pkbDb, getMeta, setMeta } from './pkbSync';
+import { db as pkbDb, setMeta } from './pkbSync';
 
 const SOURCE_DB = 'AidaWidgetDB';
 const META_KEY = 'migration.widgetChats.v1';
-const MIG_TAG_PREFIX = 'tag_mig_';
 
 // 1 = old flattened markdown transcript, 2 = structured chat JSON.
 const CONTENT_FORMAT = 2;
@@ -47,8 +35,6 @@ const CONTENT_FORMAT = 2;
 // ═══════════════════════════════════════════════════════════════════
 // Source database access (plain IndexedDB, read only)
 // ═══════════════════════════════════════════════════════════════════
-// Opening without a version can never trigger an upgrade or a
-// VersionError, whatever schema the widget wrote.
 
 const openSourceDb = () =>
     new Promise((resolve) => {
@@ -111,37 +97,6 @@ const chatRevision = (chat) => {
             0,
     ]);
 };
-
-// Synchronous cursor walk that only records a cheap revision string
-// per chat. No awaits inside the cursor step, so the transaction
-// stays alive.
-const scanRevisions = (idb, storeName) =>
-    new Promise((resolve) => {
-        const revs = new Map();
-
-        try {
-            const tx = idb.transaction(storeName, 'readonly');
-            const rq = tx.objectStore(storeName).openCursor();
-
-            rq.onsuccess = () => {
-                const cursor = rq.result;
-                if (!cursor) return;
-
-                const record = cursor.value;
-                if (record && record.id) {
-                    revs.set(record.id, chatRevision(record));
-                }
-
-                cursor.continue();
-            };
-
-            rq.onerror = () => resolve(revs);
-            tx.oncomplete = () => resolve(revs);
-            tx.onabort = () => resolve(revs);
-        } catch {
-            resolve(revs);
-        }
-    });
 
 // ═══════════════════════════════════════════════════════════════════
 // Byte helpers
@@ -222,10 +177,6 @@ const slugify = (value) =>
 // ═══════════════════════════════════════════════════════════════════
 // Attachment normalization
 // ═══════════════════════════════════════════════════════════════════
-// Widget messages have carried attachments in a few shapes over time:
-// msg.images, msg.attachments, msg.files, msg.image, msg.attachment,
-// as Blobs, data URLs, bare base64 strings, or { name, content } text
-// objects. We normalize all of them into { bytes, name, mimeType }.
 
 const resolveAttachment = async (origin, entry, msgIndex, entryIndex) => {
     const fallbackName = (mimeType) =>
@@ -329,8 +280,6 @@ const makeRef = async (origin, entry, msgIndex, entryIndex, ctx) => {
     const resolved = await resolveAttachment(origin, entry, msgIndex, entryIndex);
 
     if (!resolved) {
-        // Nothing migratable (remote URL or corrupt payload). Keep a
-        // placeholder so the message structure stays honest about it.
         const placeholder = {
             resourceId: null,
             name:
@@ -431,9 +380,6 @@ const ensureResource = async ({ bytes, name, mimeType, now, stats }) => {
     const existing = await pkbDb.docs.get(id);
 
     if (existing && !existing.deleted) {
-        // Already a PKB document. If it was synced, its encrypted
-        // objects already live in the vault under res_<hash>.enc and
-        // blob_<hash>.enc, so we only link to it. No re-upload.
         const missingBlob =
             !existing.blob && !existing.blobSyncTime && !existing.blobRemoteModified;
 
@@ -467,7 +413,6 @@ const ensureResource = async ({ bytes, name, mimeType, now, stats }) => {
         migratedFrom: SOURCE_DB,
     };
 
-    // put also revives a tombstoned doc with the same hash.
     await pkbDb.docs.put(doc);
 
     stats.resourcesCreated += 1;
@@ -567,7 +512,7 @@ const buildNotePayload = async (chat, ctx) => {
 // Migration entry point
 // ═══════════════════════════════════════════════════════════════════
 
-export const getChatsMigrationStatus = () => getMeta(META_KEY);
+export const getChatsMigrationStatus = () => pkbDb.docs.count();
 
 export const migrateWidgetChatsToPkb = async () => {
     const idb = await openSourceDb();
@@ -581,6 +526,14 @@ export const migrateWidgetChatsToPkb = async () => {
         return { skipped: true, reason: 'no chats in source database' };
     }
 
+    // One-shot guard: if the PKB docs table already has any documents,
+    // do not run the migration again.
+    const docCount = await pkbDb.docs.count();
+    if (docCount > 0) {
+        idb.close();
+        return { skipped: true, reason: 'pkb database already present' };
+    }
+
     const chatIds = await getKeysFromStore(idb, 'chats');
 
     if (!chatIds.length) {
@@ -592,19 +545,13 @@ export const migrateWidgetChatsToPkb = async () => {
         ? await getAllFromStore(idb, 'projects')
         : [];
 
-    const revs = await scanRevisions(idb, 'chats');
-
     const now = new Date().toISOString();
     const stats = {
         chats: 0,
-        chatsRefreshed: 0,
-        notesUnchanged: 0,
         tagsCreated: 0,
-        tagsReassigned: 0,
         resourcesCreated: 0,
         resourcesReused: 0,
         resourcesFilled: 0,
-        resourcesOrphaned: 0,
         attachmentsLinked: 0,
         attachmentsSkipped: 0,
         bytes: 0,
@@ -637,113 +584,24 @@ export const migrateWidgetChatsToPkb = async () => {
             }
         }
 
-        // Usage counts so orphan cleanup needs no query per resource.
-        const allNotes = await pkbDb.docs.where('kind').equals('note').toArray();
-        const usage = new Map();
-        for (const note of allNotes) {
-            for (const resourceId of note.resourceIds || []) {
-                usage.set(resourceId, (usage.get(resourceId) || 0) + 1);
-            }
-        }
-
         const ctx = { now, stats, chatTagIds };
 
         for (const chatId of chatIds) {
             const noteId = noteIdFor(chatId);
             const existing = await pkbDb.docs.get(noteId);
 
-            const desiredMigTags = Array.from(
-                new Set(chatTagIds.get(chatId) || [])
-            );
-
-            // Case 1: never migrated, or previously deleted in PKB.
-            if (!existing || existing.deleted) {
-                const chat = await getFromStore(idb, 'chats', chatId);
-                if (!chat) continue;
-
-                const payload = await buildNotePayload(chat, ctx);
-                await pkbDb.docs.put(payload);
-                stats.chats += 1;
+            // One-shot import. Once a note exists, the migration never
+            // touches it again.
+            if (existing) {
                 continue;
             }
 
-            const changes = {};
-            let touched = false;
+            const chat = await getFromStore(idb, 'chats', chatId);
+            if (!chat) continue;
 
-            // Case 2a: tag reconcile. Migration owned tags follow the
-            // widget projects, including removals. Tags created inside
-            // PKB (ids without the tag_mig_ prefix) are preserved.
-            const ownTags = (existing.tagIds || []).filter(
-                (id) => !id.startsWith(MIG_TAG_PREFIX)
-            );
-            const nextTags = Array.from(new Set([...ownTags, ...desiredMigTags]));
-            const sameTags =
-                nextTags.length === (existing.tagIds || []).length &&
-                nextTags.every((id) => (existing.tagIds || []).includes(id));
-
-            if (!sameTags) {
-                changes.tagIds = nextTags;
-                touched = true;
-                stats.tagsReassigned += 1;
-            }
-
-            // Case 2b: content refresh. Also fires when the stored note
-            // still uses an older content format (markdown transcript),
-            // so old runs upgrade to JSON automatically.
-            const rev = revs.get(chatId);
-            const staleContent =
-                existing.sourceRev !== rev ||
-                existing.contentFormat !== CONTENT_FORMAT;
-
-            if (!existing.pkbEdited && staleContent) {
-                const chat = await getFromStore(idb, 'chats', chatId);
-
-                if (chat) {
-                    const payload = await buildNotePayload(chat, ctx);
-
-                    changes.content = payload.content;
-                    changes.title = payload.title;
-                    changes.resourceIds = payload.resourceIds;
-                    changes.sourceRev = payload.sourceRev;
-                    changes.contentFormat = CONTENT_FORMAT;
-                    changes.modified = payload.modified;
-                    touched = true;
-                    stats.chatsRefreshed += 1;
-
-                    // Orphan cleanup: resources dropped by the rewrite
-                    // that no other note references and that came from
-                    // the migration.
-                    const nextRes = new Set(payload.resourceIds);
-
-                    for (const oldId of existing.resourceIds || []) {
-                        if (nextRes.has(oldId)) continue;
-                        if ((usage.get(oldId) || 0) - 1 > 0) continue;
-
-                        const res = await pkbDb.docs.get(oldId);
-
-                        if (res && res.migratedFrom && !res.deleted) {
-                            await pkbDb.docs.update(oldId, {
-                                deleted: 1,
-                                dirty: 1,
-                                modified: now,
-                            });
-                            stats.resourcesOrphaned += 1;
-                        }
-                    }
-
-                    for (const id of payload.resourceIds) {
-                        usage.set(id, (usage.get(id) || 0) + 1);
-                    }
-                }
-            }
-
-            if (touched) {
-                changes.dirty = 1;
-                if (!changes.modified) changes.modified = now;
-                await pkbDb.docs.update(noteId, changes);
-            } else {
-                stats.notesUnchanged += 1;
-            }
+            const payload = await buildNotePayload(chat, ctx);
+            await pkbDb.docs.put(payload);
+            stats.chats += 1;
         }
     } finally {
         idb.close();
