@@ -680,7 +680,7 @@ const PkbPage = () => {
             if (!note) return;
             const current = new Set(note.tagIds || []);
             tagIds.forEach((id) => current.add(id));
-            await pkbDb.docs.update(noteId, { tagIds: [...current], modified: now, dirty: 1 });
+            await pkbDb.docs.update(noteId, { tagIds: [...current], dirty: 1 });
         }));
         setToast(`Added ${tagIds.length} tag${tagIds.length !== 1 ? 's' : ''} to ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
         exitSelection();
