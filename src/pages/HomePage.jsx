@@ -1,8 +1,8 @@
-// src/pages/HomePage.jsx
 import userService from '../services/userService';
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import ChatQuickStart from '../components/ChatQuickStart';
 import {
     FiMessageSquare, FiCode, FiDollarSign, FiLock,
     FiLogIn, FiGithub, FiHardDrive,
@@ -23,11 +23,11 @@ const ModelsGraphic = () => (
         </div>
         <div className="flex flex-wrap gap-1.5 max-w-[210px]">
             {[
-                ['DeepSeek',     'bg-blue-500/20  border-blue-400/30  text-blue-300' ],
-                ['Claude',       'bg-amber-500/20 border-amber-400/30 text-amber-300'],
-                ['Gemini Flash', 'bg-teal-500/20  border-teal-400/30  text-teal-300' ],
-                ['Gemini Pro',   'bg-cyan-500/20  border-cyan-400/30  text-cyan-300' ],
-                ['+ more',       'bg-violet-500/20 border-violet-400/30 text-violet-300'],
+                ['DeepSeek', 'bg-blue-500/20  border-blue-400/30  text-blue-300'],
+                ['Claude', 'bg-amber-500/20 border-amber-400/30 text-amber-300'],
+                ['Gemini Flash', 'bg-teal-500/20  border-teal-400/30  text-teal-300'],
+                ['Gemini Pro', 'bg-cyan-500/20  border-cyan-400/30  text-cyan-300'],
+                ['+ more', 'bg-violet-500/20 border-violet-400/30 text-violet-300'],
             ].map(([name, cls]) => (
                 <span key={name} className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${cls}`}>
                     {name}
@@ -40,9 +40,9 @@ const ModelsGraphic = () => (
 const PricingGraphic = () => (
     <div className="flex justify-center gap-2 py-2">
         {[
-            { top: '$0', bot: 'Monthly Fee'  },
-            { top: '∞',  bot: 'Daily Limits' },
-            { top: '✓',  bot: 'Pay Per Use'  },
+            { top: '$0', bot: 'Monthly Fee' },
+            { top: '∞', bot: 'Daily Limits' },
+            { top: '✓', bot: 'Pay Per Use' },
         ].map(({ top, bot }) => (
             <div
                 key={bot}
@@ -87,10 +87,10 @@ const VoiceGraphic = () => (
 const FilesGraphic = () => (
     <div className="flex items-center justify-center gap-3 py-2">
         {[
-            { emoji: '🖼️', label: 'Images',  deg: '-7deg' },
-            { emoji: '📄', label: 'Docs',    deg: '0deg'  },
-            { emoji: '📁', label: 'Folders', deg: '7deg'  },
-            { emoji: '💻', label: 'Code',    deg: '-3deg' },
+            { emoji: '🖼️', label: 'Images', deg: '-7deg' },
+            { emoji: '📄', label: 'Docs', deg: '0deg' },
+            { emoji: '📁', label: 'Folders', deg: '7deg' },
+            { emoji: '💻', label: 'Code', deg: '-3deg' },
         ].map(({ emoji, label, deg }) => (
             <div
                 key={label}
@@ -179,66 +179,66 @@ const SLIDES = [
         title: 'Access Leading AI Models',
         description:
             'DeepSeek, Gemini Flash, Claude, Gemini Pro and more, all from one clean interface. Switch any time, no configuration needed.',
-        Graphic:  ModelsGraphic,
-        accent:   'text-violet-400',
-        dot:      'bg-violet-400',
+        Graphic: ModelsGraphic,
+        accent: 'text-violet-400',
+        dot: 'bg-violet-400',
         gradient: 'from-violet-500/10 to-blue-500/5',
-        border:   'border-violet-400/20',
+        border: 'border-violet-400/20',
     },
     {
         id: 'pricing',
         title: 'No Monthly Subscriptions. Ever.',
         description:
             'No daily limits. No auto-renewals. No wasted credits. Pay only for what you actually use.',
-        Graphic:  PricingGraphic,
-        accent:   'text-green-400',
-        dot:      'bg-green-400',
+        Graphic: PricingGraphic,
+        accent: 'text-green-400',
+        dot: 'bg-green-400',
         gradient: 'from-green-500/10 to-emerald-500/5',
-        border:   'border-green-400/20',
+        border: 'border-green-400/20',
     },
     {
         id: 'voice',
         title: 'Voice First',
         description:
             'Voice-enabled from the ground up. Talk your heart out! AIDA transcribes and responds to you in real time.',
-        Graphic:  VoiceGraphic,
-        accent:   'text-aida-pink',
-        dot:      'bg-aida-pink',
+        Graphic: VoiceGraphic,
+        accent: 'text-aida-pink',
+        dot: 'bg-aida-pink',
         gradient: 'from-pink-500/10 to-rose-500/5',
-        border:   'border-aida-pink/20',
+        border: 'border-aida-pink/20',
     },
     {
         id: 'files',
         title: 'Drag In Anything',
         description:
             'Drop in images, source code files, entire folders, or documents. AIDA reads and reasons over your content instantly.',
-        Graphic:  FilesGraphic,
-        accent:   'text-orange-400',
-        dot:      'bg-orange-400',
+        Graphic: FilesGraphic,
+        accent: 'text-orange-400',
+        dot: 'bg-orange-400',
         gradient: 'from-orange-500/10 to-yellow-500/5',
-        border:   'border-orange-400/20',
+        border: 'border-orange-400/20',
     },
     {
         id: 'websearch',
         title: 'Live Web Search',
         description:
             'Get real-time, up-to-date answers with built-in web search.',
-        Graphic:  WebSearchGraphic,
-        accent:   'text-blue-400',
-        dot:      'bg-blue-400',
+        Graphic: WebSearchGraphic,
+        accent: 'text-blue-400',
+        dot: 'bg-blue-400',
         gradient: 'from-blue-500/10 to-cyan-500/5',
-        border:   'border-blue-400/20',
+        border: 'border-blue-400/20',
     },
     {
         id: 'youtube',
         title: 'YouTube & Webpage Analysis',
         description:
             'Paste any YouTube link or URL. AIDA fetches the transcript or page content so you can summarize, query, and analyze it in seconds.',
-        Graphic:  YouTubeGraphic,
-        accent:   'text-red-400',
-        dot:      'bg-red-400',
+        Graphic: YouTubeGraphic,
+        accent: 'text-red-400',
+        dot: 'bg-red-400',
         gradient: 'from-red-500/10 to-rose-500/5',
-        border:   'border-red-400/20',
+        border: 'border-red-400/20',
     },
 ];
 
@@ -250,9 +250,9 @@ const FeatureCarousel = () => {
     const [current, setCurrent] = useState(0);
     const [visible, setVisible] = useState(true);
     const [hovered, setHovered] = useState(false);
-    const indexRef      = useRef(0);
+    const indexRef = useRef(0);
     const transitioning = useRef(false);
-    const total         = SLIDES.length;
+    const total = SLIDES.length;
 
     const goTo = useCallback((next) => {
         if (next === indexRef.current || transitioning.current) return;
@@ -260,7 +260,7 @@ const FeatureCarousel = () => {
         setVisible(false);
         setTimeout(() => {
             setCurrent(next);
-            indexRef.current    = next;
+            indexRef.current = next;
             setVisible(true);
             transitioning.current = false;
         }, 260);
@@ -294,8 +294,8 @@ const FeatureCarousel = () => {
                 <div
                     className={`flex-1 relative overflow-hidden rounded-2xl border ${slide.border} bg-aida-card`}
                     style={{
-                        opacity:    visible ? 1 : 0,
-                        transform:  visible ? 'translateY(0)' : 'translateY(6px)',
+                        opacity: visible ? 1 : 0,
+                        transform: visible ? 'translateY(0)' : 'translateY(6px)',
                         transition: 'opacity 0.26s ease, transform 0.26s ease',
                     }}
                 >
@@ -332,11 +332,10 @@ const FeatureCarousel = () => {
                         key={s.id}
                         onClick={() => goTo(i)}
                         aria-label={`Go to feature ${i + 1} of ${total}`}
-                        className={`rounded-full transition-all duration-300 ${
-                            i === current
+                        className={`rounded-full transition-all duration-300 ${i === current
                                 ? `w-5 h-2 ${slide.dot}`
                                 : 'w-2 h-2 bg-aida-border hover:bg-aida-text-muted'
-                        }`}
+                            }`}
                     />
                 ))}
             </div>
@@ -371,7 +370,7 @@ const Step = ({ number, title, description }) => (
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const HomePage = () => {
-    const navigate        = useNavigate();
+    const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
 
     // ADDED: State for user count
@@ -396,8 +395,8 @@ const HomePage = () => {
             description:
                 'Bring your own API key and pay only for what you actually use. ' +
                 'No monthly fees, no auto-renewals, no daily limits, no wasted credits.',
-            colorClass:  'text-green-400',
-            bgClass:     'bg-green-400/10',
+            colorClass: 'text-green-400',
+            bgClass: 'bg-green-400/10',
             borderClass: 'border-green-400/20',
         },
         {
@@ -406,8 +405,8 @@ const HomePage = () => {
             description:
                 'Every line of frontend and backend code is public on GitHub. ' +
                 'Inspect it, fork it, contribute to it. This tool belongs to the community.',
-            colorClass:  'text-blue-400',
-            bgClass:     'bg-blue-400/10',
+            colorClass: 'text-blue-400',
+            bgClass: 'bg-blue-400/10',
             borderClass: 'border-blue-400/20',
         },
         {
@@ -417,8 +416,8 @@ const HomePage = () => {
                 'Conversations are never sent to our servers or sold to anyone. ' +
                 'Your chat history is saved privately in your own browser. ' +
                 'Note: the AI providers you choose have their own data policies.',
-            colorClass:  'text-aida-pink',
-            bgClass:     'bg-aida-pink/10',
+            colorClass: 'text-aida-pink',
+            bgClass: 'bg-aida-pink/10',
             borderClass: 'border-aida-pink/20',
         },
     ];
@@ -462,6 +461,8 @@ const HomePage = () => {
     return (
         <div className="bg-aida-light">
 
+
+
             {/* HERO */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 text-center">
 
@@ -486,8 +487,8 @@ const HomePage = () => {
                     <div className="mt-6 flex flex-col items-center gap-2">
                         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-aida-card border border-aida-border shadow-sm">
                             <span className="relative flex h-3 w-3">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                             </span>
                             <span className="text-sm font-medium text-aida-text-muted">
                                 <span className="text-aida-dark font-bold">{userStats.dau}</span> earthlings used AIDA in the last 24h
@@ -503,23 +504,8 @@ const HomePage = () => {
                     <FeatureCarousel />
                 </div>
 
-                <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <button
-                        onClick={handleStartChatting}
-                        className="inline-flex items-center px-8 py-4 bg-aida-pink text-white font-semibold rounded-xl hover:opacity-90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform text-lg"
-                    >
-                        <FiMessageSquare className="w-5 h-5 mr-2" />
-                        Start Chatting, It's Free
-                    </button>
+                <ChatQuickStart />
 
-                    <button
-                        onClick={() => navigate('/source')}
-                        className="inline-flex items-center px-8 py-4 border border-aida-border text-aida-dark font-semibold rounded-xl hover:bg-aida-card transition-colors text-lg"
-                    >
-                        <FiCode className="w-5 h-5 mr-2" />
-                        View Source Code
-                    </button>
-                </div>
 
                 <p className="mt-5 text-sm text-aida-text-muted">
                     No account needed to get started.{' '}
@@ -540,11 +526,19 @@ const HomePage = () => {
                     )}
                 </p>
 
-                <p className="mt-2 text-xs text-aida-text-muted">
-                    The chat button will appear in the{' '}
-                    <span className="font-medium text-aida-dark">bottom-right corner</span>{' '}
-                    of your screen ↘
-                </p>
+                
+                <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+
+                    <button
+                        onClick={() => navigate('/source')}
+                        className="inline-flex items-center px-8 py-4 border border-aida-border text-aida-dark font-semibold rounded-xl hover:bg-aida-card transition-colors text-lg"
+                    >
+                        <FiCode className="w-5 h-5 mr-2" />
+                        View Source Code
+                    </button>
+                </div>
+
+
             </section>
 
             {/* THREE VALUE PILLARS */}
