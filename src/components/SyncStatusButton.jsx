@@ -1,9 +1,9 @@
 // src/components/SyncStatusButton.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
     FiGlobe, FiLock, FiRefreshCw, FiCheck, FiAlertCircle,
-    FiChevronDown, FiKey, FiX,
+    FiChevronDown, FiKey,
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { usePkbSync } from '../contexts/PkbSyncContext';
@@ -13,19 +13,10 @@ import ForgotPasswordModal from './ForgotPasswordModal';
 import DisableSyncModal from './DisableSyncModal';
 import ChangePasswordModal from './ChangePasswordModal';
 
-const relativeTime = (date) => {
-    if (!date) return null;
-    const secs = Math.round((Date.now() - new Date(date).getTime()) / 1000);
-    if (secs < 5) return 'just now';
-    if (secs < 60) return `${secs}s ago`;
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    return `${Math.floor(secs / 3600)}h ago`;
-};
-
 const SyncStatusButton = () => {
     const { isAuthenticated } = useAuth();
     const {
-        vaultExists, locked, syncStatus, syncNow, lockVault,
+        vaultExists, locked, syncStatus, syncProgress, syncNow, lockVault,
     } = usePkbSync();
 
     const [panelOpen, setPanelOpen] = useState(false);
@@ -59,26 +50,163 @@ const SyncStatusButton = () => {
 
     if (!isAuthenticated) return null;
 
-    const statusLower = (syncStatus || '').toLowerCase();
-    const isSyncing = statusLower.includes('syncing') || statusLower.includes('uploading') || statusLower.includes('downloading');
-    const isError = statusLower.includes('failed') || statusLower.includes('error');
-    const isSuccess = statusLower.includes('complete');
+    const plural = (n) => (n === 1 ? '' : 's');
+
+    const display = useMemo(() => {
+        if (locked) {
+            return {
+                icon: FiLock,
+                spin: false,
+                color: 'text-amber-500',
+                label: 'Locked',
+                title: 'Encrypted sync is locked. Click to unlock.',
+            };
+        }
+
+        const p = syncProgress;
+        if (p && p.phase !== 'idle') {
+            if (p.phase === 'preparing') {
+                return {
+                    icon: FiRefreshCw,
+                    spin: true,
+                    label: 'Syncing...',
+                    title: `${p.totalUploads || 0} change${plural(p.totalUploads || 0)} to upload, ${p.totalDownloads || 0} remote change${plural(p.totalDownloads || 0)} to download`,
+                };
+            }
+
+            if (p.phase === 'uploading') {
+                const pending = Math.max(
+                    0,
+                    (p.totalDownloads || 0) - (p.completedDownloads || 0)
+                );
+                return {
+                    icon: FiRefreshCw,
+                    spin: true,
+                    label: `${p.completedUploads || 0}/${p.totalUploads || 0}`,
+                    title: `Uploading ${p.completedUploads || 0} of ${p.totalUploads || 0}${pending ? ` - ${pending} download${plural(pending)} pending` : ''}`,
+                };
+            }
+
+            if (p.phase === 'downloading') {
+                return {
+                    icon: FiRefreshCw,
+                    spin: true,
+                    label: `${p.completedDownloads || 0}/${p.totalDownloads || 0}`,
+                    title: `Downloading ${p.completedDownloads || 0} of ${p.totalDownloads || 0}`,
+                };
+            }
+
+            if (p.phase === 'complete') {
+                const items = p.syncedItems || 0;
+                return {
+                    icon: FiCheck,
+                    spin: false,
+                    color: 'text-green-600',
+                    label: `${items} synced`,
+                    title: `${items} chat${plural(items)} synced`,
+                };
+            }
+
+            if (p.phase === 'error') {
+                return {
+                    icon: FiAlertCircle,
+                    spin: false,
+                    color: 'text-red-600',
+                    label: 'Error',
+                    title: p.message || syncStatus || 'Sync failed',
+                };
+            }
+        }
+
+        const statusLower = (syncStatus || '').toLowerCase();
+        const isSyncing =
+            statusLower.includes('syncing') ||
+            statusLower.includes('uploading') ||
+            statusLower.includes('downloading');
+        const isError =
+            statusLower.includes('failed') || statusLower.includes('error');
+        const isSuccess = statusLower.includes('complete');
+
+        if (isSyncing) {
+            return {
+                icon: FiRefreshCw,
+                spin: true,
+                label: 'Syncing...',
+                title: syncStatus,
+            };
+        }
+
+        if (isError) {
+            return {
+                icon: FiAlertCircle,
+                spin: false,
+                color: 'text-red-600',
+                label: 'Error',
+                title: syncStatus,
+            };
+        }
+
+        if (isSuccess) {
+            return {
+                icon: FiCheck,
+                spin: false,
+                color: 'text-green-600',
+                label: 'Synced',
+                title: syncStatus,
+            };
+        }
+
+        return {
+            icon: FiGlobe,
+            spin: false,
+            color: 'text-green-600',
+            label: 'Sync',
+            title: 'Encrypted sync is on. Click for options.',
+        };
+    }, [locked, syncProgress, syncStatus]);
+
+    const progressDetail = useMemo(() => {
+        if (!syncProgress || syncProgress.phase === 'idle') return null;
+
+        const p = syncProgress;
+        const s = (n) => (n === 1 ? '' : 's');
+
+        if (p.phase === 'preparing') {
+            return `Found ${p.totalUploads || 0} local change${s(p.totalUploads || 0)} and ${p.totalDownloads || 0} remote change${s(p.totalDownloads || 0)}.`;
+        }
+
+        if (p.phase === 'uploading') {
+            const pending = Math.max(
+                0,
+                (p.totalDownloads || 0) - (p.completedDownloads || 0)
+            );
+            return `Uploading ${p.completedUploads || 0} of ${p.totalUploads || 0}${pending ? ` (${pending} download${s(pending)} pending)` : ''}.`;
+        }
+
+        if (p.phase === 'downloading') {
+            return `Downloading ${p.completedDownloads || 0} of ${p.totalDownloads || 0}.`;
+        }
+
+        if (p.phase === 'complete') {
+            const items = p.syncedItems || 0;
+            return `${items} chat${s(items)} synced.`;
+        }
+
+        if (p.phase === 'error') {
+            return p.message || 'Sync failed.';
+        }
+
+        return null;
+    }, [syncProgress]);
 
     const StatusIcon = () => {
-        if (locked) return <FiLock className="w-3.5 h-3.5 text-amber-500" />;
-        if (isSyncing) return <FiRefreshCw className="w-3.5 h-3.5 animate-spin" />;
-        if (isError) return <FiAlertCircle className="w-3.5 h-3.5 text-red-600" />;
-        if (isSuccess) return <FiCheck className="w-3.5 h-3.5 text-green-600" />;
-        return <FiGlobe className="w-3.5 h-3.5 text-green-600" />;
+        const Icon = display.icon;
+        return (
+            <Icon
+                className={`w-3.5 h-3.5 ${display.spin ? 'animate-spin' : ''} ${display.color || ''}`}
+            />
+        );
     };
-
-    const statusText = locked
-        ? 'Locked. Enter your password to resume syncing.'
-        : isSyncing
-            ? 'Syncing...'
-            : isError
-                ? syncStatus
-                : 'Encrypted sync is on.';
 
     const overlays = (
         <>
@@ -110,11 +238,12 @@ const SyncStatusButton = () => {
                 <div className="relative" ref={menuRef}>
                     <button
                         type="button"
-                        onClick={() => setPanelOpen(p => !p)}
+                        onClick={() => setPanelOpen((p) => !p)}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700 dark:hover:text-white"
+                        title={display.title}
                     >
                         <StatusIcon />
-                        <span className="hidden md:inline">{locked ? 'Sync locked' : 'Sync'}</span>
+                        <span className="hidden md:inline">{display.label}</span>
                         <FiChevronDown className="w-3 h-3" />
                     </button>
 
@@ -123,11 +252,17 @@ const SyncStatusButton = () => {
                             <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
                                 <div className="flex items-center gap-2">
                                     <StatusIcon />
-                                    <span className={`text-xs font-medium ${isError && !locked ? 'text-red-500' : 'text-gray-800 dark:text-gray-100'}`}>
-                                        {statusText}
+                                    <span className={`text-xs font-medium ${display.color || 'text-gray-800 dark:text-gray-100'}`}>
+                                        {display.title}
                                     </span>
                                 </div>
                             </div>
+
+                            {progressDetail && (
+                                <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                                    {progressDetail}
+                                </div>
+                            )}
 
                             {locked ? (
                                 <button
@@ -143,10 +278,10 @@ const SyncStatusButton = () => {
                                     <button
                                         type="button"
                                         onClick={() => { syncNow(); setPanelOpen(false); }}
-                                        disabled={isSyncing}
+                                        disabled={display.spin}
                                         className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 disabled:opacity-40 transition-colors"
                                     >
-                                        <FiRefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                        <FiRefreshCw className={`w-4 h-4 ${display.spin ? 'animate-spin' : ''}`} />
                                         Sync Now
                                     </button>
                                     <button

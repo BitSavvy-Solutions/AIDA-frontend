@@ -37,6 +37,8 @@ const engine = {
     debounceTimer: null,
     syncing: false,
     onStatus: () => {},
+    onProgress: () => {},
+    progress: { phase: 'idle' },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -668,8 +670,6 @@ export async function resetPasswordWithRecovery(
     };
 }
 
-// Add after resetPasswordWithRecovery in src/services/pkbSync.js
-
 export async function deletePkbVault(token) {
     await vaultFetch(`/apps/${APP_ID}/vault`, {
         method: 'DELETE',
@@ -729,8 +729,6 @@ export async function clearLocalPkbData() {
         throw error;
     }
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Local sync helpers
@@ -805,7 +803,6 @@ export async function clearSyncMetadataForAllDocs() {
         await db.docs.bulkDelete(tombstoneIds);
     }
 
-    // Clear the last sync timestamp as well
     await db.meta.delete('lastSyncAt');
 }
 
@@ -877,12 +874,15 @@ const tryMergeChatDocs = (localDoc, remoteDoc) => {
 // Sync engine (no vaultId)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function startPkbSync({ token, dek, onStatus }) {
+export function startPkbSync({ token, dek, onStatus, onProgress }) {
     stopPkbSync();
 
     engine.token = token;
     engine.dek = dek;
     engine.onStatus = onStatus || (() => {});
+    engine.onProgress = onProgress || (() => {});
+    engine.progress = { phase: 'idle' };
+    engine.onProgress(engine.progress);
 
     markUnsyncedDocsDirty()
         .then(() => syncNow())
@@ -909,10 +909,14 @@ export function stopPkbSync() {
         engine.debounceTimer = null;
     }
 
+    engine.progress = { phase: 'idle' };
+    if (engine.onProgress) engine.onProgress(engine.progress);
+
     engine.token = null;
     engine.dek = null;
     engine.syncing = false;
     engine.onStatus = () => {};
+    engine.onProgress = () => {};
 }
 
 export function requestPkbSync(delayMs = 1500) {
@@ -942,8 +946,19 @@ export async function syncNow() {
         engine.onStatus(message);
     };
 
+    const setProgress = (patch) => {
+        engine.progress = { ...engine.progress, ...patch };
+        engine.onProgress(engine.progress);
+    };
+
+    const resetProgress = () => {
+        engine.progress = { phase: 'idle' };
+        engine.onProgress(engine.progress);
+    };
+
     try {
         setStatus('Sync: listing remote objects');
+        setProgress({ phase: 'preparing', message: 'Finding changes...' });
 
         const remoteObjects = await listAllObjects(engine.token);
 
@@ -983,18 +998,74 @@ export async function syncNow() {
 
         const dirtyDocs = docs.filter((doc) => doc.dirty);
 
+        // Count how many remote items will be downloaded (same filters as below).
+        const remoteDocObjects = remoteObjects.filter(
+            (item) => !isBlobKey(item.key)
+        );
+        const remoteBlobObjects = remoteObjects.filter((item) =>
+            isBlobKey(item.key)
+        );
+
+        let totalDownloads = 0;
+
+        for (const remote of remoteDocObjects) {
+            const id = idFromDocKey(remote.key);
+            const local = await db.docs.get(id);
+
+            if (local && (local.dirty || local.deleted)) continue;
+
+            if (
+                !local ||
+                !local.remoteModified ||
+                isNewerRemote(remote.lastModified, local.remoteModified)
+            ) {
+                totalDownloads += 1;
+            }
+        }
+
+        for (const remote of remoteBlobObjects) {
+            const id = idFromBlobKey(remote.key);
+            const local = await db.docs.get(id);
+
+            if (!local || local.deleted || local.dirty) continue;
+
+            if (
+                !local.blob ||
+                !local.blobRemoteModified ||
+                isNewerRemote(remote.lastModified, local.blobRemoteModified)
+            ) {
+                totalDownloads += 1;
+            }
+        }
+
+        const totalUploads = dirtyDocs.length;
+
+        setProgress({
+            phase: 'preparing',
+            totalUploads,
+            completedUploads: 0,
+            totalDownloads,
+            completedDownloads: 0,
+            message: `${totalUploads} to upload, ${totalDownloads} to download`,
+        });
+        setStatus(`Sync: ${totalUploads} to upload, ${totalDownloads} to download`);
+
+        let completedUploads = 0;
+
         for (const doc of dirtyDocs) {
-            setStatus(`Sync: uploading ${doc.title || doc.id}`);
+            completedUploads += 1;
+            setProgress({
+                phase: 'uploading',
+                completedUploads,
+                message: `Uploading ${completedUploads} of ${totalUploads}`,
+            });
+            setStatus(`Sync: uploading ${completedUploads}/${totalUploads}`);
 
             const key = docKey(doc.id);
             const remote = remoteByKey.get(key);
 
             let shouldUpload = true;
 
-            // A remote object may contain changes we have not yet seen if
-            // its server lastModified is newer than the version we last
-            // acknowledged, or if we have never acknowledged a remote
-            // version at all.
             const remoteMayHaveChanged =
                 remote &&
                 (!doc.remoteModified ||
@@ -1013,15 +1084,11 @@ export async function syncNow() {
                         const lastSynced = timestamp(doc.lastSyncedModified);
 
                         if (remoteModified <= lastSynced) {
-                            // The remote object is our own previous upload
-                            // (or something older). Not a conflict.
+                            // Our own previous upload; not a conflict.
                         } else {
                             const merged = tryMergeChatDocs(doc, remoteDoc);
 
                             if (merged) {
-                                // Chat notes merge at the message level.
-                                // Both sides keep every message and no
-                                // conflict copy is created.
                                 await db.docs.update(doc.id, {
                                     content: merged.content,
                                     title: merged.title,
@@ -1055,8 +1122,7 @@ export async function syncNow() {
                                     accepted.blobSyncTime = doc.blobSyncTime;
                                     accepted.blobRemoteModified =
                                         remoteByKey.get(blobKey(doc.id))
-                                            ?.lastModified ||
-                                        doc.blobRemoteModified;
+                                            ?.lastModified || doc.blobRemoteModified;
                                 }
 
                                 await db.docs.put(accepted);
@@ -1090,12 +1156,6 @@ export async function syncNow() {
 
             uploadedKeys.add(key);
 
-            // Stamp the doc with the moment this upload finished. The
-            // server records almost the same instant as the object's
-            // lastModified, so the next sync can tell "unchanged since my
-            // upload" apart from "changed by someone else". Previously this
-            // stored the lastModified of the version BEFORE the upload,
-            // which made every doc look remotely changed on the next sync.
             const uploadedAt = new Date().toISOString();
 
             const update = {
@@ -1138,10 +1198,16 @@ export async function syncNow() {
 
         // Download remote doc changes.
         setStatus('Sync: downloading remote changes');
+        setProgress({
+            phase: 'downloading',
+            completedUploads,
+            completedDownloads: 0,
+            message: totalDownloads
+                ? `Downloading 1 of ${totalDownloads}`
+                : 'No downloads needed',
+        });
 
-        const remoteDocObjects = remoteObjects.filter(
-            (item) => !isBlobKey(item.key)
-        );
+        let completedDownloads = 0;
 
         for (const remote of remoteDocObjects) {
             if (uploadedKeys.has(remote.key)) {
@@ -1164,10 +1230,14 @@ export async function syncNow() {
                 continue;
             }
 
-            const remoteDoc = await downloadDoc(
-                engine.token,
-                remote.key
-            );
+            completedDownloads += 1;
+            setProgress({
+                phase: 'downloading',
+                completedDownloads,
+                message: `Downloading ${completedDownloads} of ${totalDownloads}`,
+            });
+
+            const remoteDoc = await downloadDoc(engine.token, remote.key);
 
             if (!remoteDoc) {
                 continue;
@@ -1194,10 +1264,6 @@ export async function syncNow() {
         }
 
         // Download remote blob changes.
-        const remoteBlobObjects = remoteObjects.filter((item) =>
-            isBlobKey(item.key)
-        );
-
         for (const remote of remoteBlobObjects) {
             if (uploadedKeys.has(remote.key)) {
                 continue;
@@ -1218,6 +1284,13 @@ export async function syncNow() {
             if (!shouldDownload) {
                 continue;
             }
+
+            completedDownloads += 1;
+            setProgress({
+                phase: 'downloading',
+                completedDownloads,
+                message: `Downloading ${completedDownloads} of ${totalDownloads}`,
+            });
 
             const blob = await downloadBlob(
                 engine.token,
@@ -1260,9 +1333,29 @@ export async function syncNow() {
 
         await setMeta('lastSyncAt', now);
 
+        const syncedNotes = await db.docs
+            .where('kind')
+            .equals('note')
+            .and((doc) => !doc.deleted)
+            .count();
+
+        setProgress({
+            phase: 'complete',
+            syncedItems: syncedNotes,
+            message: `${syncedNotes} chat${syncedNotes !== 1 ? 's' : ''} synced`,
+        });
         setStatus('Sync complete');
+
+        setTimeout(() => {
+            resetProgress();
+        }, 3000);
     } catch (error) {
         console.error('PKB sync failed:', error);
+
+        setProgress({
+            phase: 'error',
+            message: error.message,
+        });
         setStatus(`Sync failed: ${error.message}`);
     } finally {
         engine.syncing = false;
