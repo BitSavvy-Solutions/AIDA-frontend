@@ -3,6 +3,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db as pkbDb } from '../services/pkbSync';
+import { DEFAULT_TAGS } from '../config/defaultTags';
 import { FiPlus, FiBook, FiArrowRight } from 'react-icons/fi';
 import ChatList from './ChatList';
 
@@ -15,6 +16,30 @@ const parseChat = (note) => {
     } catch {
         return false;
     }
+};
+
+const ensureTagDoc = async (tag) => {
+    const existing = await pkbDb.docs.get(tag.id);
+
+    if (existing && !existing.deleted) {
+        return tag.id;
+    }
+
+    const now = new Date().toISOString();
+
+    await pkbDb.docs.put({
+        id: tag.id,
+        kind: 'tag',
+        title: tag.title,
+        iconKey: tag.iconKey || 'notebook',
+        iconColor: tag.iconColor || '#9CA3AF',
+        created: now,
+        modified: now,
+        dirty: 1,
+        deleted: 0,
+    });
+
+    return tag.id;
 };
 
 const ChatQuickStart = () => {
@@ -34,7 +59,23 @@ const ChatQuickStart = () => {
         []
     ) || [];
 
-    // Determine which tags have been used in any chat
+    // Combine real DB tags with virtual default tags that have not been created yet.
+    const allVisibleTags = useMemo(() => {
+        const existingIds = new Set(tags.map((tag) => tag.id));
+
+        const virtualDefaults = DEFAULT_TAGS
+            .filter((defaultTag) => !existingIds.has(defaultTag.id))
+            .map((defaultTag) => ({
+                ...defaultTag,
+                kind: 'tag',
+                deleted: 0,
+                created: null,
+                modified: null,
+            }));
+
+        return [...tags, ...virtualDefaults];
+    }, [tags]);
+
     const usedTagIds = useMemo(() => {
         const ids = new Set();
         for (const note of notes) {
@@ -44,37 +85,37 @@ const ChatQuickStart = () => {
         return ids;
     }, [notes]);
 
-    // Filter tags based on toggle
     const displayedTags = useMemo(() => {
-        const base = showAllTags ? tags : tags.filter((tag) => usedTagIds.has(tag.id));
-        return [...base].sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
-    }, [tags, usedTagIds, showAllTags]);
+        const base = showAllTags
+            ? allVisibleTags
+            : allVisibleTags.filter((tag) => usedTagIds.has(tag.id) || DEFAULT_TAGS.some((d) => d.id === tag.id));
 
-    const chatCount = useMemo(
-        () => notes.filter((note) => parseChat(note)).length,
-        [notes]
-    );
+        return [...base].sort((a, b) => {
+            const aTime = a.modified ? new Date(a.modified).getTime() : 0;
+            const bTime = b.modified ? new Date(b.modified).getTime() : 0;
+            return bTime - aTime;
+        });
+    }, [allVisibleTags, usedTagIds, showAllTags]);
 
-    // All chat notes
     const chatNotes = useMemo(() => notes.filter(parseChat), [notes]);
 
-    // Total chats per tag
     const tagTotalCounts = useMemo(() => {
         const map = new Map();
+
         for (const note of chatNotes) {
             for (const tagId of note.tagIds || []) {
                 map.set(tagId, (map.get(tagId) || 0) + 1);
             }
         }
+
         return map;
     }, [chatNotes]);
 
-    // Resulting chats per tag if that tag is active with the current selection
     const tagResultCounts = useMemo(() => {
         const map = new Map();
         const selectedArray = [...selectedTags];
 
-        for (const tag of tags) {
+        for (const tag of allVisibleTags) {
             const required = selectedTags.has(tag.id)
                 ? selectedArray
                 : [...selectedArray, tag.id];
@@ -87,12 +128,13 @@ const ChatQuickStart = () => {
         }
 
         return map;
-    }, [chatNotes, tags, selectedTags]);
+    }, [chatNotes, allVisibleTags, selectedTags]);
 
-    // Chats that match the currently selected tags
     const matchingChats = useMemo(() => {
         if (selectedTags.size === 0) return [];
+
         const selectedArray = [...selectedTags];
+
         return notes
             .filter((note) => {
                 if (!parseChat(note)) return false;
@@ -101,12 +143,11 @@ const ChatQuickStart = () => {
             .sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
     }, [notes, selectedTags]);
 
-    // Convert tags array to a Map for ChatList
     const tagMap = useMemo(() => {
         const map = new Map();
-        tags.forEach((tag) => map.set(tag.id, tag));
+        allVisibleTags.forEach((tag) => map.set(tag.id, tag));
         return map;
-    }, [tags]);
+    }, [allVisibleTags]);
 
     const toggleTag = useCallback((tagId) => {
         setSelectedTags((prev) => {
@@ -126,6 +167,15 @@ const ChatQuickStart = () => {
 
         const id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
         const nowIso = new Date().toISOString();
+        const selectedTagIds = [...selectedTags];
+
+        // Lazily create any selected default tags that do not exist yet.
+        for (const tagId of selectedTagIds) {
+            const defaultTag = DEFAULT_TAGS.find((tag) => tag.id === tagId);
+            if (defaultTag) {
+                await ensureTagDoc(defaultTag);
+            }
+        }
 
         await pkbDb.docs.put({
             id,
@@ -136,7 +186,7 @@ const ChatQuickStart = () => {
                 messages: [],
             }),
             contentFormat: 2,
-            tagIds: [...selectedTags],
+            tagIds: selectedTagIds,
             resourceIds: [],
             created: nowIso,
             modified: nowIso,
@@ -157,7 +207,6 @@ const ChatQuickStart = () => {
     return (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
             <div className="rounded-2xl border border-aida-border bg-aida-card p-5 sm:p-6 shadow-sm">
-                {/* Tags section */}
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <p className="text-sm font-semibold text-aida-text-muted">
@@ -195,7 +244,7 @@ const ChatQuickStart = () => {
                                         }`}
                                         style={{
                                             borderColor: `${color}66`,
-                                            color: color,
+                                            color,
                                             backgroundColor: isSelected ? `${color}33` : `${color}14`,
                                         }}
                                     >
@@ -221,7 +270,6 @@ const ChatQuickStart = () => {
                     )}
                 </div>
 
-                {/* Matching chats preview */}
                 {selectedTags.size > 0 && (
                     <div className="mt-4 pt-4 border-t border-aida-border">
                         <ChatList
@@ -238,7 +286,6 @@ const ChatQuickStart = () => {
                     </div>
                 )}
 
-                {/* Start chat button */}
                 <div className="mt-5 flex justify-center">
                     <button
                         type="button"
@@ -251,7 +298,6 @@ const ChatQuickStart = () => {
                     </button>
                 </div>
 
-                {/* PKB link */}
                 <button
                     type="button"
                     onClick={() => navigate('/pkb')}
@@ -268,7 +314,7 @@ const ChatQuickStart = () => {
                                 Personal Knowledge Bank
                             </span>{' '}
                             <span className="text-aida-text-muted/70">
-                                ({chatCount} chat{chatCount !== 1 ? 's' : ''})
+                                ({chatNotes.length} chat{chatNotes.length !== 1 ? 's' : ''})
                             </span>
                         </span>
                     </span>

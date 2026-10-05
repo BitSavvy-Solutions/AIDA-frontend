@@ -465,6 +465,7 @@ const HomePage = () => {
 
             {/* HERO */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 text-center">
+            
 
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-aida-pink/10 border border-aida-pink/20 text-aida-pink text-sm font-medium mb-8">
                     <HiSparkles className="w-4 h-4" />
@@ -481,6 +482,9 @@ const HomePage = () => {
                     <span className="text-aida-pink">Open Source Interface.</span>{' '}
                     No Daily Limits.
                 </h1>
+
+                <ChatQuickStart />
+
 
                 {/* 🔥 CHANGED to: Display the active user stats */}
                 {userStats && userStats.total > 0 && (
@@ -503,9 +507,6 @@ const HomePage = () => {
                 <div className="mt-8">
                     <FeatureCarousel />
                 </div>
-
-                <ChatQuickStart />
-
 
                 <p className="mt-5 text-sm text-aida-text-muted">
                     No account needed to get started.{' '}
