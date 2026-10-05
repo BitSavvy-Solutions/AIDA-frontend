@@ -474,7 +474,7 @@ const PkbPage = () => {
             <div className="border-b border-aida-border bg-aida-card px-4 py-3">
                 <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-lg font-bold text-aida-dark">Personal Knowledge Base</h1>
+                        <h1 className="text-lg font-bold text-aida-dark">Personal Knowledge Bank</h1>
                         <p className="text-xs text-aida-text-muted">
                             {filteredNotes.length} item{filteredNotes.length !== 1 ? 's' : ''}
                             {rawNotes.length !== filteredNotes.length && ` of ${rawNotes.length}`}
