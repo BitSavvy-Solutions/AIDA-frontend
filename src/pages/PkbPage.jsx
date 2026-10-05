@@ -15,17 +15,15 @@ import {
     db as pkbDb,
     uid,
 } from '../services/pkbSync';
+import ChatList from '../components/ChatList';
+import { parseNoteContent, noteLastActivity, findMessageMatches } from '../components/NoteCard';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PAGE_SIZE = 25;
-const EMPTY_TAGS = [];
 const EMPTY_MATCHES = [];
-const CONTEXT_WORDS = 6;
-const MAX_VISIBLE_MATCHES = 3;
-const MAX_MATCHES_PER_NOTE = 20;
 
 const getStartOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 const getEndOfDay = (date) => getStartOfDay(date) + 86400000;
@@ -45,21 +43,6 @@ const getDateRangeFromPreset = (preset, customRange) => {
         };
         default: return { start: null, end: null };
     }
-};
-
-const getRelativeDateGroup = (timestampMs) => {
-    const now = new Date();
-    const todayStart = getStartOfDay(now);
-    const yesterdayStart = todayStart - 86400000;
-    const weekStart = todayStart - 7 * 86400000;
-
-    if (timestampMs >= todayStart) return 'Today';
-    if (timestampMs >= yesterdayStart) return 'Yesterday';
-    if (timestampMs >= weekStart) return 'Past Week';
-
-    return new Date(timestampMs).toLocaleDateString(undefined, {
-        month: 'short', day: 'numeric', year: 'numeric',
-    });
 };
 
 const formatRelativeTime = (ts) => {
@@ -86,253 +69,6 @@ const formatBytes = (bytes) => {
     }
     return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 };
-
-const parseNoteContent = (note) => {
-    try {
-        const parsed = JSON.parse(note.content || '{}');
-        if (parsed.schema === 'aida/chat' && Array.isArray(parsed.messages)) {
-            return { kind: 'chat', messages: parsed.messages };
-        }
-    } catch { /* not JSON */ }
-    return { kind: 'note', messages: [] };
-};
-
-const noteLastActivity = (note) => {
-    if (note.kind === 'note') {
-        const { messages } = parseNoteContent(note);
-        let ts = 0;
-        for (const m of messages) {
-            const t = new Date(m.timestamp || m.createdAt || m.time || 0).getTime();
-            if (Number.isFinite(t)) ts = Math.max(ts, t);
-        }
-        // Fall back to created time if the chat has no messages with timestamps
-        return ts || new Date(note.created || 0).getTime();
-    }
-    return new Date(note.modified || note.created || 0).getTime();
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Search snippets
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const buildSnippet = (text, matchStart, matchLength) => {
-    const matchEnd = matchStart + matchLength;
-    const n = text.length;
-    let i = matchStart;
-    let count = 0;
-    while (i > 0 && count < CONTEXT_WORDS) {
-        while (i > 0 && text[i - 1] <= ' ') i--;
-        while (i > 0 && text[i - 1] > ' ') i--;
-        count++;
-    }
-    const start = i;
-    let j = matchEnd;
-    count = 0;
-    while (j < n && count < CONTEXT_WORDS) {
-        while (j < n && text[j] <= ' ') j++;
-        while (j < n && text[j] > ' ') j++;
-        count++;
-    }
-    const end = j;
-    return {
-        text: text.slice(start, end),
-        matchStart: matchStart - start,
-        matchEnd: matchEnd - start,
-        isStartTruncated: start > 0,
-        isEndTruncated: end < n,
-    };
-};
-
-const findMessageMatches = (note, query, lowerMessages) => {
-    const q = query.trim().toLowerCase();
-    if (!q) return EMPTY_MATCHES;
-    const { messages } = parseNoteContent(note);
-    const results = [];
-    outer:
-    for (let idx = 0; idx < messages.length; idx++) {
-        const lower = lowerMessages[idx] || '';
-        if (!lower) continue;
-        const text = messages[idx].text || '';
-        let i = lower.indexOf(q);
-        while (i !== -1) {
-            results.push({
-                msgIndex: idx,
-                sender: messages[idx].sender,
-                snippet: buildSnippet(text, i, q.length),
-            });
-            if (results.length >= MAX_MATCHES_PER_NOTE) break outer;
-            i = lower.indexOf(q, i + q.length);
-        }
-    }
-    return results;
-};
-
-const HighlightedText = ({ text = '', query }) => {
-    const q = (query || '').trim();
-    if (!q) return text;
-    const lower = text.toLowerCase();
-    const lq = q.toLowerCase();
-    const parts = [];
-    let i = 0;
-    let k = 0;
-    while (i < text.length) {
-        const idx = lower.indexOf(lq, i);
-        if (idx === -1) { parts.push(text.slice(i)); break; }
-        if (idx > i) parts.push(text.slice(i, idx));
-        parts.push(
-            <mark key={k++} className="bg-aida-pink/25 text-aida-pink rounded px-0.5">
-                {text.slice(idx, idx + q.length)}
-            </mark>
-        );
-        i = idx + q.length;
-    }
-    return parts;
-};
-
-const MatchSnippet = ({ match }) => {
-    const { snippet, sender } = match;
-    const before = snippet.text.slice(0, snippet.matchStart);
-    const hit = snippet.text.slice(snippet.matchStart, snippet.matchEnd);
-    const after = snippet.text.slice(snippet.matchEnd);
-    return (
-        <div className="flex items-start gap-2">
-            <span className={`flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${sender === 'user' ? 'bg-aida-pink/10 text-aida-pink' : 'bg-blue-500/10 text-blue-400'}`}>
-                {sender === 'user' ? 'You' : 'AIDA'}
-            </span>
-            <p className="text-xs text-aida-text-muted leading-relaxed min-w-0 break-words">
-                {snippet.isStartTruncated && <span className="text-aida-text-muted/50">... </span>}
-                {before}
-                <mark className="bg-aida-pink/25 text-aida-pink rounded px-0.5 font-medium">{hit}</mark>
-                {after}
-                {snippet.isEndTruncated && <span className="text-aida-text-muted/50"> ...</span>}
-            </p>
-        </div>
-    );
-};
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Note card
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const NoteCard = React.memo(function NoteCard({
-    note,
-    tags,
-    matches,
-    hasQuery,
-    query,
-    selectionMode,
-    isSelected,
-    isExpanded,
-    onToggleSelected,
-    onEnterSelection,
-    onToggleMatches,
-}) {
-    const { kind, messages } = parseNoteContent(note);
-    const isChat = kind === 'chat';
-    const firstUser = isChat
-        ? messages.find((m) => m.sender === 'user' && (m.text || '').trim())
-        : null;
-    const preview = firstUser?.text?.slice(0, 150) || (note.content || '').slice(0, 150);
-    const msgCount = messages.length;
-    const visibleMatches = isExpanded ? matches : matches.slice(0, MAX_VISIBLE_MATCHES);
-    const capped = matches.length >= MAX_MATCHES_PER_NOTE;
-
-    return (
-        <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-                if (selectionMode) {
-                    onToggleSelected(note.id);
-                } else {
-                    window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: note.id } }));
-                }
-            }}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                    if (selectionMode) {
-                        onToggleSelected(note.id);
-                    } else {
-                        window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: note.id } }));
-                    }
-                }
-            }}
-            className={`w-full text-left p-4 rounded-xl border transition-all group cursor-pointer ${isSelected ? 'border-aida-pink/60 bg-aida-pink/5 shadow-sm' : 'border-aida-border bg-aida-card hover:border-aida-pink/30 hover:shadow-sm'}`}
-        >
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            selectionMode ? onToggleSelected(note.id) : onEnterSelection(note.id);
-                        }}
-                        className="flex-shrink-0 mt-0.5 text-aida-text-muted hover:text-aida-pink transition-opacity opacity-100"
-                        aria-label={isSelected ? 'Deselect note' : 'Select note'}
-                    >
-                        {isSelected ? <FiCheckSquare className="w-4 h-4 text-aida-pink" /> : <FiSquare className="w-4 h-4" />}
-                    </button>
-
-                    <div className="min-w-0 flex-1">
-                        <h4 className="text-sm font-semibold text-aida-dark truncate">
-                            <HighlightedText text={note.title || 'Untitled'} query={query} />
-                        </h4>
-                        {!hasQuery && preview && (
-                            <p className="text-xs text-aida-text-muted mt-1.5 line-clamp-2 leading-relaxed">
-                                {preview}
-                            </p>
-                        )}
-
-                        {tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2.5">
-                                {tags.map((tag) => (
-                                    <span
-                                        key={tag.id}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-aida-light border border-aida-border text-aida-text-muted"
-                                    >
-                                        {tag.title}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <FiChevronRight className="w-4 h-4 text-aida-text-muted group-hover:text-aida-pink transition-colors flex-shrink-0 mt-1" />
-            </div>
-
-            {hasQuery && matches.length > 0 && (
-                <div className="mt-3 pl-3 border-l-2 border-aida-pink/30 space-y-2">
-                    {visibleMatches.map((m, i) => (
-                        <MatchSnippet key={`${m.msgIndex}-${i}`} match={m} />
-                    ))}
-                    {matches.length > MAX_VISIBLE_MATCHES && (
-                        <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); onToggleMatches(note.id); }}
-                            className="text-[11px] font-medium text-aida-pink hover:underline"
-                        >
-                            {isExpanded ? 'Show fewer' : `Show all ${matches.length}${capped ? '+' : ''} matches`}
-                        </button>
-                    )}
-                </div>
-            )}
-
-            {hasQuery && matches.length === 0 && isChat && (
-                <p className="mt-2 text-[11px] italic text-aida-text-muted/70">Keyword found in the title</p>
-            )}
-
-            <div className="flex items-center gap-4 mt-3 text-[11px] text-aida-text-muted/60">
-            <span className="flex items-center gap-1"><FiClock className="w-3 h-3" /> {formatRelativeTime(noteLastActivity(note))}</span>
-                {isChat && <span>{msgCount} message{msgCount !== 1 ? 's' : ''}</span>}
-                {!isChat && note.resourceIds?.length > 0 && <span>{note.resourceIds.length} attachment{note.resourceIds.length !== 1 ? 's' : ''}</span>}
-                {hasQuery && matches.length > 0 && (
-                    <span className="text-aida-pink font-medium">{matches.length}{capped ? '+' : ''} match{matches.length !== 1 ? 'es' : ''}</span>
-                )}
-            </div>
-        </div>
-    );
-});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Bulk tag modal
@@ -544,60 +280,16 @@ const PkbPage = () => {
 
     const hasQuery = Boolean(debouncedQuery.trim());
 
-    const groupedNotes = useMemo(() => {
-        const groups = [];
-        const indexByLabel = {};
-        for (const note of filteredNotes) {
-            const label = getRelativeDateGroup(noteLastActivity(note));
-            let idx = indexByLabel[label];
-            if (idx === undefined) {
-                idx = groups.length;
-                indexByLabel[label] = idx;
-                groups.push({ label, notes: [] });
-            }
-            groups[idx].notes.push(note);
-        }
-        return groups;
-    }, [filteredNotes]);
-
-    const paginatedGroups = useMemo(() => {
-        const maxNotes = page * PAGE_SIZE;
-        let shown = 0;
-        const result = [];
-        for (const group of groupedNotes) {
-            if (shown >= maxNotes) break;
-            const remaining = maxNotes - shown;
-            const visible = group.notes.slice(0, remaining);
-            if (visible.length) {
-                result.push({ ...group, notes: visible, total: group.notes.length });
-                shown += visible.length;
-            }
-        }
-        return result;
-    }, [groupedNotes, page]);
-
-    useEffect(() => { setIsLoadingMore(false); }, [paginatedGroups]);
-
-    const hasMore = filteredNotes.length > page * PAGE_SIZE;
-    const isSearching = searchQuery.trim() !== debouncedQuery.trim();
-    const isLoading = rawNotes === undefined;
-
-    useEffect(() => {
-        if (!hasMore || isLoadingMore) return;
-        const node = sentinelRef.current;
-        if (!node) return;
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) { setIsLoadingMore(true); setPage((p) => p + 1); }
-        }, { rootMargin: '400px' });
-        observer.observe(node);
-        return () => observer.disconnect();
-    }, [hasMore, isLoadingMore]);
-
     const visibleNoteIds = useMemo(() => {
         const ids = new Set();
-        paginatedGroups.forEach((g) => g.notes.forEach((n) => ids.add(n.id)));
+        let shown = 0;
+        for (const note of filteredNotes) {
+            if (shown >= page * PAGE_SIZE) break;
+            ids.add(note.id);
+            shown++;
+        }
         return ids;
-    }, [paginatedGroups]);
+    }, [filteredNotes, page]);
 
     const matchesMap = useMemo(() => {
         if (!hasQuery) return {};
@@ -760,6 +452,21 @@ const PkbPage = () => {
     ];
 
     const statusMessage = syncStatus;
+
+    const hasMore = filteredNotes.length > page * PAGE_SIZE;
+    const isSearching = searchQuery.trim() !== debouncedQuery.trim();
+    const isLoading = rawNotes === undefined;
+
+    useEffect(() => {
+        if (!hasMore || isLoadingMore) return;
+        const node = sentinelRef.current;
+        if (!node) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) { setIsLoadingMore(true); setPage((p) => p + 1); }
+        }, { rootMargin: '400px' });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [hasMore, isLoadingMore]);
 
     return (
         <div className="min-h-screen bg-aida-light">
@@ -943,38 +650,31 @@ const PkbPage = () => {
                         <button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-5 py-2.5 border border-aida-border text-aida-dark text-sm font-medium rounded-xl hover:bg-aida-card"><FiRefreshCw className="w-4 h-4" /> Reset filters</button>
                     </div>
                 ) : (
-                    <div className="space-y-8">
-                        {paginatedGroups.map((group) => (
-                            <div key={group.label}>
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-aida-text-muted mb-3 px-1">
-                                    {group.label} <span className="ml-2 font-normal normal-case text-aida-text-muted/50">({group.total})</span>
-                                </h3>
-                                <div className="space-y-2">
-                                    {group.notes.map((note) => (
-                                        <NoteCard
-                                            key={note.id}
-                                            note={note}
-                                            tags={(note.tagIds || []).map((id) => tagById.get(id)).filter(Boolean)}
-                                            matches={matchesMap[note.id] || EMPTY_MATCHES}
-                                            hasQuery={hasQuery}
-                                            query={debouncedQuery}
-                                            selectionMode={selectionMode}
-                                            isSelected={selectedNoteIds.has(note.id)}
-                                            isExpanded={expandedMatches.has(note.id)}
-                                            onToggleSelected={toggleNoteSelected}
-                                            onEnterSelection={enterSelection}
-                                            onToggleMatches={toggleMatchesExpanded}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                    <>
+                        <ChatList
+                            notes={filteredNotes}
+                            tags={tagById}
+                            onOpenChat={(id) => window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: id } }))}
+                            selectionMode={selectionMode}
+                            selectedIds={selectedNoteIds}
+                            onToggleSelect={toggleNoteSelected}
+                            onEnterSelection={enterSelection}
+                            expandedMatches={expandedMatches}
+                            onToggleMatches={toggleMatchesExpanded}
+                            query={debouncedQuery}
+                            matchesMap={matchesMap}
+                            maxItems={page * PAGE_SIZE}
+                            onShowMore={() => setPage(p => p + 1)}
+                            showMoreLabel="Load more"
+                            isLoading={false}
+                            emptyMessage=""
+                        />
                         {hasMore && (
                             <div ref={sentinelRef} className="py-4 flex justify-center">
                                 <div className="flex items-center gap-2 text-sm text-aida-text-muted"><FiLoader className="w-4 h-4 animate-spin text-aida-pink" /> Loading more...</div>
                             </div>
                         )}
-                    </div>
+                    </>
                 )}
 
                 <div className={selectionMode ? 'h-24' : 'h-8'} />
