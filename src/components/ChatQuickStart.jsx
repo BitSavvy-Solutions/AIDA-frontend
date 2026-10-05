@@ -55,6 +55,40 @@ const ChatQuickStart = () => {
         [notes]
     );
 
+    // All chat notes
+    const chatNotes = useMemo(() => notes.filter(parseChat), [notes]);
+
+    // Total chats per tag
+    const tagTotalCounts = useMemo(() => {
+        const map = new Map();
+        for (const note of chatNotes) {
+            for (const tagId of note.tagIds || []) {
+                map.set(tagId, (map.get(tagId) || 0) + 1);
+            }
+        }
+        return map;
+    }, [chatNotes]);
+
+    // Resulting chats per tag if that tag is active with the current selection
+    const tagResultCounts = useMemo(() => {
+        const map = new Map();
+        const selectedArray = [...selectedTags];
+
+        for (const tag of tags) {
+            const required = selectedTags.has(tag.id)
+                ? selectedArray
+                : [...selectedArray, tag.id];
+
+            const count = chatNotes.filter((note) =>
+                required.every((id) => (note.tagIds || []).includes(id))
+            ).length;
+
+            map.set(tag.id, count);
+        }
+
+        return map;
+    }, [chatNotes, tags, selectedTags]);
+
     // Chats that match the currently selected tags
     const matchingChats = useMemo(() => {
         if (selectedTags.size === 0) return [];
@@ -143,6 +177,10 @@ const ChatQuickStart = () => {
                             {displayedTags.map((tag) => {
                                 const color = tag.iconColor || '#9CA3AF';
                                 const isSelected = selectedTags.has(tag.id);
+                                const total = tagTotalCounts.get(tag.id) || 0;
+                                const result = tagResultCounts.get(tag.id) || 0;
+                                const showRatio = selectedTags.size > 0;
+
                                 return (
                                     <button
                                         key={tag.id}
@@ -165,7 +203,13 @@ const ChatQuickStart = () => {
                                             className="w-2 h-2 rounded-full flex-shrink-0"
                                             style={{ backgroundColor: color }}
                                         />
-                                        <span className="truncate max-w-[140px]">{tag.title}</span>
+                                        <span className="truncate max-w-[110px]">{tag.title}</span>
+                                        <span
+                                            className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                                            style={{ backgroundColor: `${color}22`, color }}
+                                        >
+                                            {showRatio ? `${result}/${total}` : total}
+                                        </span>
                                     </button>
                                 );
                             })}
