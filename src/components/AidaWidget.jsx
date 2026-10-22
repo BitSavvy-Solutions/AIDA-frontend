@@ -102,8 +102,8 @@ const AidaWidget = () => {
                         },
                         paymentLink: {
                             show: true,
-                            url: 'https://buy.stripe.com/5kQ8wO11A3y97tjcThabK00',
-                            text: ''
+                            url: '/account',
+                            text: '',
                         }
                     }
                 });
