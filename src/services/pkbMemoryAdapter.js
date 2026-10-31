@@ -1,8 +1,10 @@
 // src/services/pkbMemoryAdapter.js
-import { liveQuery } from 'dexie';
 import { db as pkbDb, uid } from './pkbSync';
+import { CHAT_SCHEMA, isChatContent } from './chatNote';
 
-const CHAT_SCHEMA = 'aida/chat';
+// Coalesce write bursts (e.g. sync applying hundreds of docs, or rapid
+// message saves) into a single subscriber notification.
+const NOTIFY_DEBOUNCE_MS = 150;
 
 // Helper: parse chat messages from a note's content
 const parseChatContent = (note) => {
@@ -34,18 +36,52 @@ const tagToProject = (tag) => ({
 
 export const createPkbMemoryAdapter = () => {
     const subscribers = new Set();
-    const notify = () => subscribers.forEach((fn) => fn());
+    let notifyTimer = null;
+    let disposed = false;
 
-    // Set up a liveQuery that fires on any PKB document change
-    const subscription = liveQuery(() => pkbDb.docs.toArray()).subscribe({
-        next: () => notify(),
-        error: (err) => console.error('PKB liveQuery error:', err),
-    });
+    const notify = () => {
+        if (disposed || notifyTimer !== null) return;
+        notifyTimer = setTimeout(() => {
+            notifyTimer = null;
+            if (disposed) return;
+            subscribers.forEach((fn) => {
+                try {
+                    fn();
+                } catch (err) {
+                    console.error('PKB subscriber error:', err);
+                }
+            });
+        }, NOTIFY_DEBOUNCE_MS);
+    };
+
+    // Observe writes via Dexie mutation hooks. This catches every write
+    // from every code path (adapter, sync engine, migration, PKB page,
+    // quick start) without loading a single document into memory.
+    // The previous implementation used liveQuery(() => docs.toArray()),
+    // which permanently retained the entire database in JS memory.
+    const onMutated = () => notify();
+    pkbDb.docs.hook('creating', onMutated);
+    pkbDb.docs.hook('updating', onMutated);
+    pkbDb.docs.hook('deleting', onMutated);
 
     return {
         subscribe(callback) {
             subscribers.add(callback);
             return () => subscribers.delete(callback);
+        },
+
+        // Releases the mutation hooks and subscribers. Data methods keep
+        // working after disposal; only change notifications stop.
+        dispose() {
+            disposed = true;
+            if (notifyTimer !== null) {
+                clearTimeout(notifyTimer);
+                notifyTimer = null;
+            }
+            pkbDb.docs.hook('creating').unsubscribe(onMutated);
+            pkbDb.docs.hook('updating').unsubscribe(onMutated);
+            pkbDb.docs.hook('deleting').unsubscribe(onMutated);
+            subscribers.clear();
         },
 
         async listSessions() {
@@ -56,14 +92,7 @@ export const createPkbMemoryAdapter = () => {
                 .toArray();
 
             return notes
-                .filter((note) => {
-                    try {
-                        const parsed = JSON.parse(note.content || '{}');
-                        return parsed.schema === CHAT_SCHEMA;
-                    } catch {
-                        return false;
-                    }
-                })
+                .filter((note) => isChatContent(note.content))
                 .map(noteToSession)
                 .sort((a, b) =>
                     (b.updatedAt || '').localeCompare(a.updatedAt || '')
@@ -115,7 +144,6 @@ export const createPkbMemoryAdapter = () => {
                 deleted: 0,
             };
             await pkbDb.docs.put(note);
-            notify();
             return id;
         },
 
@@ -130,7 +158,6 @@ export const createPkbMemoryAdapter = () => {
                 modified: now,
                 dirty: 1,
             });
-            notify();
         },
 
         async renameSession(sessionId, newTitle) {
@@ -139,7 +166,6 @@ export const createPkbMemoryAdapter = () => {
                 modified: new Date().toISOString(),
                 dirty: 1,
             });
-            notify();
         },
 
         async deleteSession(sessionId) {
@@ -148,7 +174,6 @@ export const createPkbMemoryAdapter = () => {
                 dirty: 1,
                 modified: new Date().toISOString(),
             });
-            notify();
         },
 
         async createTag(name) {
@@ -165,7 +190,6 @@ export const createPkbMemoryAdapter = () => {
                 dirty: 1,
                 deleted: 0,
             });
-            notify();
             return id;
         },
 
@@ -179,7 +203,6 @@ export const createPkbMemoryAdapter = () => {
                 modified: new Date().toISOString(),
                 dirty: 1,
             });
-            notify();
         },
 
         async removeTag(chatId, tagId) {
@@ -191,7 +214,6 @@ export const createPkbMemoryAdapter = () => {
                 modified: new Date().toISOString(),
                 dirty: 1,
             });
-            notify();
         },
 
         async updateTag(tagId, updates) {
@@ -204,7 +226,6 @@ export const createPkbMemoryAdapter = () => {
                 modified: new Date().toISOString(),
                 dirty: 1,
             });
-            notify();
         },
 
         async deleteTag(tagId) {
@@ -232,7 +253,6 @@ export const createPkbMemoryAdapter = () => {
                     }
                 })
             );
-            notify();
         },
     };
 };
