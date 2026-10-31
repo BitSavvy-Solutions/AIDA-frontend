@@ -2,28 +2,29 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-    FiSearch, FiChevronRight, FiCalendar, FiTag, FiX,
-    FiMessageSquare, FiClock, FiFilter, FiRefreshCw, FiChevronDown,
+    FiSearch, FiCalendar, FiTag, FiX,
+    FiMessageSquare, FiFilter, FiRefreshCw, FiChevronDown,
     FiCheckSquare, FiSquare, FiPlus, FiCheck, FiLoader,
     FiTrash2, FiLock, FiKey,
 } from 'react-icons/fi';
 
 import { useAuth } from '../contexts/AuthContext';
 import { usePkbSync } from '../contexts/PkbSyncContext';
-import { migrateWidgetChatsToPkb, getChatsMigrationStatus } from '../services/migrateChatsToPkb';
 import {
     db as pkbDb,
     uid,
 } from '../services/pkbSync';
+import { isChatContent } from '../services/chatNote';
 import ChatList from '../components/ChatList';
-import { parseNoteContent, noteLastActivity, findMessageMatches } from '../components/NoteCard';
+import { parseNoteContent, findMessageMatches } from '../components/NoteCard';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PAGE_SIZE = 25;
-const EMPTY_MATCHES = [];
+const EMPTY_META = [];
+const EMPTY_MATCHES_MAP = {};
 
 const getStartOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 const getEndOfDay = (date) => getStartOfDay(date) + 86400000;
@@ -43,31 +44,6 @@ const getDateRangeFromPreset = (preset, customRange) => {
         };
         default: return { start: null, end: null };
     }
-};
-
-const formatRelativeTime = (ts) => {
-    if (!ts) return '';
-    const diff = Date.now() - new Date(ts).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days <= 30) return `${days}d ago`;
-    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-};
-
-const formatBytes = (bytes) => {
-    if (!bytes) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let value = bytes;
-    let index = 0;
-    while (value >= 1024 && index < units.length - 1) {
-        value = value / 1024;
-        index += 1;
-    }
-    return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -164,12 +140,10 @@ const BulkTagModal = ({ isOpen, onClose, tags, selectedNoteIds, onApply, onCreat
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const PkbPage = () => {
-    const { user, isAuthenticated } = useAuth();
+    const { isAuthenticated } = useAuth();
     const {
         vaultExists, dek, syncStatus, syncNow, lockVault, requestSync,
     } = usePkbSync();
-
-    const [migrationStatus, setMigrationStatus] = useState('');
 
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -216,9 +190,40 @@ const PkbPage = () => {
         window.dispatchEvent(new CustomEvent('aida:open-enable-sync'));
     };
 
-    // Data
-    const rawNotes = useLiveQuery(() => pkbDb.docs.where('kind').equals('note').and((n) => !n.deleted).reverse().sortBy('modified'), []) || [];
-    const allTags = useLiveQuery(() => pkbDb.docs.where('kind').equals('tag').and((t) => !t.deleted).sortBy('title'), []) || [];
+    // ───────────────────────────────────────────────────────────────────────────
+    // Data layer
+    //
+    // Only lightweight metadata is retained for the full note set. Full
+    // note documents (which contain entire chat transcripts) are loaded
+    // exclusively for the currently visible page, and transiently while
+    // a search query is active.
+    // ───────────────────────────────────────────────────────────────────────────
+
+    const notesMeta = useLiveQuery(async () => {
+        const notes = await pkbDb.docs
+            .where('kind')
+            .equals('note')
+            .and((n) => !n.deleted)
+            .toArray();
+        return notes.map((n) => ({
+            id: n.id,
+            title: n.title || '',
+            tagIds: n.tagIds || [],
+            resourceIds: n.resourceIds || [],
+            modified: n.modified || '',
+            created: n.created || '',
+            ts: Date.parse(n.modified || n.created || '') || 0,
+            isChat: isChatContent(n.content),
+        }));
+    }, []);
+
+    const meta = notesMeta || EMPTY_META;
+    const isLoading = notesMeta === undefined;
+
+    const allTags = useLiveQuery(
+        () => pkbDb.docs.where('kind').equals('tag').and((t) => !t.deleted).sortBy('title'),
+        []
+    ) || [];
 
     const tagById = useMemo(() => {
         const map = new Map();
@@ -226,90 +231,133 @@ const PkbPage = () => {
         return map;
     }, [allTags]);
 
-    const searchIndex = useMemo(() => {
-        const map = {};
-        for (const note of rawNotes) {
-            const { kind, messages } = parseNoteContent(note);
-            const lowerMessages = kind === 'chat' ? messages.map((m) => (m.text || '').toLowerCase()) : [];
-            map[note.id] = {
-                lowerTitle: (note.title || '').toLowerCase(),
-                lowerMessages,
-                haystack: lowerMessages.join('\n'),
-            };
-        }
-        return map;
-    }, [rawNotes]);
-
     const dateRange = useMemo(() => getDateRangeFromPreset(datePreset, customRange), [datePreset, customRange]);
-
-    const filteredNotes = useMemo(() => {
-        let result = [...rawNotes];
-
-        if (dateRange.start !== null) {
-            result = result.filter((n) => noteLastActivity(n) >= dateRange.start);
-        }
-        if (dateRange.end !== null) {
-            result = result.filter((n) => noteLastActivity(n) <= dateRange.end);
-        }
-
-        if (selectedTagIds.size > 0) {
-            result = result.filter((n) => [...selectedTagIds].every((id) => (n.tagIds || []).includes(id)));
-        }
-
-        const q = debouncedQuery.trim().toLowerCase();
-        if (q) {
-            result = result.filter((n) => {
-                const idx = searchIndex[n.id];
-                if (!idx) return false;
-                return idx.lowerTitle.includes(q) || idx.haystack.includes(q);
-            });
-        }
-
-        return result.sort((a, b) => {
-            switch (sort) {
-                case 'oldest': return (a.modified || '').localeCompare(b.modified || '');
-                case 'mostMessages': {
-                    const ma = parseNoteContent(a).messages.length;
-                    const mb = parseNoteContent(b).messages.length;
-                    return mb - ma;
-                }
-                default: return noteLastActivity(b) - noteLastActivity(a);
-            }
-        });
-    }, [rawNotes, dateRange, selectedTagIds, debouncedQuery, sort, searchIndex]);
 
     const hasQuery = Boolean(debouncedQuery.trim());
 
-    const visibleNoteIds = useMemo(() => {
-        const ids = new Set();
-        let shown = 0;
-        for (const note of filteredNotes) {
-            if (shown >= page * PAGE_SIZE) break;
-            ids.add(note.id);
-            shown++;
+    // Full-content search scan. Runs ONLY while a query is active and
+    // retains only the match snippets, never the note contents.
+    const searchData = useLiveQuery(async () => {
+        const q = debouncedQuery.trim().toLowerCase();
+        if (!q) return null;
+
+        const notes = await pkbDb.docs
+            .where('kind')
+            .equals('note')
+            .and((n) => !n.deleted)
+            .toArray();
+
+        const matchingIds = new Set();
+        const matchesMap = {};
+
+        for (const note of notes) {
+            const titleHit = (note.title || '').toLowerCase().includes(q);
+            let matches = null;
+
+            if (isChatContent(note.content)) {
+                const { messages } = parseNoteContent(note);
+                const lowerMessages = messages.map((m) => (m.text || '').toLowerCase());
+                const found = findMessageMatches(note, debouncedQuery, lowerMessages);
+                if (found.length > 0) matches = found;
+            }
+
+            if (titleHit || matches) {
+                matchingIds.add(note.id);
+                if (matches) matchesMap[note.id] = matches;
+            }
+        }
+
+        return { matchingIds, matchesMap };
+    }, [debouncedQuery, notesMeta]);
+
+    // Message counts are parsed only when the "Most messages" sort is active.
+    const messageCounts = useLiveQuery(async () => {
+        if (sort !== 'mostMessages') return null;
+
+        const counts = {};
+        const notes = await pkbDb.docs
+            .where('kind')
+            .equals('note')
+            .and((n) => !n.deleted)
+            .toArray();
+
+        for (const note of notes) {
+            if (!isChatContent(note.content)) {
+                counts[note.id] = 0;
+                continue;
+            }
+            try {
+                const parsed = JSON.parse(note.content);
+                counts[note.id] = Array.isArray(parsed.messages) ? parsed.messages.length : 0;
+            } catch {
+                counts[note.id] = 0;
+            }
+        }
+        return counts;
+    }, [sort, notesMeta]);
+
+    const filteredMeta = useMemo(() => {
+        let result = meta;
+
+        if (dateRange.start !== null) {
+            result = result.filter((n) => n.ts >= dateRange.start);
+        }
+        if (dateRange.end !== null) {
+            result = result.filter((n) => n.ts <= dateRange.end);
+        }
+
+        if (selectedTagIds.size > 0) {
+            result = result.filter((n) => [...selectedTagIds].every((id) => n.tagIds.includes(id)));
+        }
+
+        if (hasQuery) {
+            if (!searchData) return [];
+            result = result.filter((n) => searchData.matchingIds.has(n.id));
+        }
+
+        return [...result].sort((a, b) => {
+            switch (sort) {
+                case 'oldest': return (a.modified || '').localeCompare(b.modified || '');
+                case 'mostMessages': return (messageCounts?.[b.id] || 0) - (messageCounts?.[a.id] || 0);
+                default: return b.ts - a.ts;
+            }
+        });
+    }, [meta, dateRange, selectedTagIds, hasQuery, searchData, sort, messageCounts]);
+
+    // Full documents for the visible page only (max PAGE_SIZE records).
+    const pageIds = useMemo(() => {
+        const limit = page * PAGE_SIZE;
+        const ids = [];
+        for (let i = 0; i < filteredMeta.length && i < limit; i += 1) {
+            ids.push(filteredMeta[i].id);
         }
         return ids;
-    }, [filteredNotes, page]);
+    }, [filteredMeta, page]);
 
-    const matchesMap = useMemo(() => {
-        if (!hasQuery) return {};
-        const map = {};
-        for (const note of filteredNotes) {
-            if (!visibleNoteIds.has(note.id)) continue;
-            map[note.id] = findMessageMatches(note, debouncedQuery, searchIndex[note.id]?.lowerMessages || EMPTY_MATCHES);
-        }
-        return map;
-    }, [filteredNotes, debouncedQuery, hasQuery, searchIndex, visibleNoteIds]);
+    const pageIdsKey = useMemo(() => pageIds.join('\n'), [pageIds]);
+
+    const pageNotes = useLiveQuery(async () => {
+        if (pageIds.length === 0) return [];
+        const docs = await pkbDb.docs.bulkGet(pageIds);
+        return docs.filter(Boolean);
+    }, [pageIdsKey]) || [];
+
+    // Re-arm the infinite-scroll sentinel once the new page has loaded.
+    useEffect(() => {
+        setIsLoadingMore(false);
+    }, [pageIdsKey]);
+
+    const matchesMap = searchData?.matchesMap || EMPTY_MATCHES_MAP;
 
     // Prune selected ids that no longer exist
     useEffect(() => {
         setSelectedNoteIds((prev) => {
             if (prev.size === 0) return prev;
-            const existing = new Set(rawNotes.map((n) => n.id));
+            const existing = new Set(meta.map((n) => n.id));
             const next = new Set([...prev].filter((id) => existing.has(id)));
             return next.size === prev.size ? prev : next;
         });
-    }, [rawNotes]);
+    }, [meta]);
 
     // Escape exits selection
     useEffect(() => {
@@ -354,23 +402,22 @@ const PkbPage = () => {
         setSelectedNoteIds(new Set());
     }, []);
 
-    const allFilteredSelected = filteredNotes.length > 0 && filteredNotes.every((n) => selectedNoteIds.has(n.id));
+    const allFilteredSelected = filteredMeta.length > 0 && filteredMeta.every((n) => selectedNoteIds.has(n.id));
 
     const toggleSelectAll = useCallback(() => {
         setSelectedNoteIds((prev) => {
             if (allFilteredSelected) {
                 const next = new Set(prev);
-                filteredNotes.forEach((n) => next.delete(n.id));
+                filteredMeta.forEach((n) => next.delete(n.id));
                 return next;
             }
-            return new Set([...prev, ...filteredNotes.map((n) => n.id)]);
+            return new Set([...prev, ...filteredMeta.map((n) => n.id)]);
         });
-    }, [allFilteredSelected, filteredNotes]);
+    }, [allFilteredSelected, filteredMeta]);
 
     const handleApplyTags = useCallback(async (tagIds) => {
         const ids = [...selectedNoteIds];
         if (ids.length === 0 || tagIds.length === 0) return;
-        const now = new Date().toISOString();
         await Promise.all(ids.map(async (noteId) => {
             const note = await pkbDb.docs.get(noteId);
             if (!note) return;
@@ -406,16 +453,22 @@ const PkbPage = () => {
         if (!confirmed) return;
 
         const now = new Date().toISOString();
-        const allNotes = await pkbDb.docs.where('kind').equals('note').toArray();
+        const deleting = new Set(ids);
+        const metaById = new Map(meta.map((n) => [n.id, n]));
 
         for (const id of ids) {
-            const note = await pkbDb.docs.get(id);
-            if (!note) continue;
+            const noteMeta = metaById.get(id);
+            if (!noteMeta) continue;
 
             await pkbDb.docs.update(id, { deleted: 1, dirty: 1, modified: now });
 
-            const orphanIds = (note.resourceIds || []).filter((resourceId) => {
-                return !allNotes.some((item) => item.id !== id && !item.deleted && (item.resourceIds || []).includes(resourceId));
+            // A resource is orphaned when no surviving note references it.
+            const orphanIds = (noteMeta.resourceIds || []).filter((resourceId) => {
+                return !meta.some((item) =>
+                    item.id !== id &&
+                    !deleting.has(item.id) &&
+                    (item.resourceIds || []).includes(resourceId)
+                );
             });
 
             for (const rid of orphanIds) {
@@ -426,7 +479,7 @@ const PkbPage = () => {
         setToast(`Deleted ${ids.length} item${ids.length !== 1 ? 's' : ''}`);
         exitSelection();
         requestSync(500);
-    }, [selectedNoteIds, exitSelection, requestSync]);
+    }, [selectedNoteIds, exitSelection, requestSync, meta]);
 
     const toggleMatchesExpanded = useCallback((id) => {
         setExpandedMatches((prev) => {
@@ -453,9 +506,10 @@ const PkbPage = () => {
 
     const statusMessage = syncStatus;
 
-    const hasMore = filteredNotes.length > page * PAGE_SIZE;
-    const isSearching = searchQuery.trim() !== debouncedQuery.trim();
-    const isLoading = rawNotes === undefined;
+    const hasMore = filteredMeta.length > page * PAGE_SIZE;
+    const isSearching =
+        searchQuery.trim() !== debouncedQuery.trim() ||
+        (hasQuery && searchData === undefined);
 
     useEffect(() => {
         if (!hasMore || isLoadingMore) return;
@@ -476,8 +530,8 @@ const PkbPage = () => {
                     <div>
                         <h1 className="text-lg font-bold text-aida-dark">Personal Knowledge Bank</h1>
                         <p className="text-xs text-aida-text-muted">
-                            {filteredNotes.length} item{filteredNotes.length !== 1 ? 's' : ''}
-                            {rawNotes.length !== filteredNotes.length && ` of ${rawNotes.length}`}
+                            {filteredMeta.length} item{filteredMeta.length !== 1 ? 's' : ''}
+                            {meta.length !== filteredMeta.length && ` of ${meta.length}`}
                             {isAuthenticated && ' • encrypted sync available'}
                         </p>
                     </div>
@@ -637,13 +691,13 @@ const PkbPage = () => {
                         <FiLoader className="mx-auto w-12 h-12 text-aida-pink animate-spin mb-4" />
                         <h3 className="text-lg font-semibold text-aida-dark">Loading...</h3>
                     </div>
-                ) : rawNotes.length === 0 ? (
+                ) : meta.length === 0 ? (
                     <div className="text-center py-20">
                         <FiMessageSquare className="mx-auto w-12 h-12 text-aida-text-muted mb-4 opacity-20" />
                         <h3 className="text-lg font-semibold text-aida-dark mb-2">No notes yet</h3>
                         <p className="text-sm text-aida-text-muted max-w-sm mx-auto">Chat history will appear here after migration.</p>
                     </div>
-                ) : filteredNotes.length === 0 && !isSearching ? (
+                ) : filteredMeta.length === 0 && !isSearching ? (
                     <div className="text-center py-20">
                         <FiSearch className="mx-auto w-12 h-12 text-aida-text-muted mb-4 opacity-20" />
                         <h3 className="text-lg font-semibold text-aida-dark mb-2">No matches found</h3>
@@ -652,7 +706,7 @@ const PkbPage = () => {
                 ) : (
                     <>
                         <ChatList
-                            notes={filteredNotes}
+                            notes={pageNotes}
                             tags={tagById}
                             onOpenChat={(id) => window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: id } }))}
                             selectionMode={selectionMode}
@@ -663,15 +717,22 @@ const PkbPage = () => {
                             onToggleMatches={toggleMatchesExpanded}
                             query={debouncedQuery}
                             matchesMap={matchesMap}
-                            maxItems={page * PAGE_SIZE}
-                            onShowMore={() => setPage(p => p + 1)}
-                            showMoreLabel="Load more"
                             isLoading={false}
                             emptyMessage=""
                         />
                         {hasMore && (
                             <div ref={sentinelRef} className="py-4 flex justify-center">
-                                <div className="flex items-center gap-2 text-sm text-aida-text-muted"><FiLoader className="w-4 h-4 animate-spin text-aida-pink" /> Loading more...</div>
+                                {isLoadingMore ? (
+                                    <div className="flex items-center gap-2 text-sm text-aida-text-muted"><FiLoader className="w-4 h-4 animate-spin text-aida-pink" /> Loading more...</div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setIsLoadingMore(true); setPage((p) => p + 1); }}
+                                        className="px-4 py-2 text-sm font-medium text-aida-pink hover:underline"
+                                    >
+                                        Load more ({filteredMeta.length - pageNotes.length} remaining)
+                                    </button>
+                                )}
                             </div>
                         )}
                     </>
@@ -696,7 +757,7 @@ const PkbPage = () => {
                         <span className="text-sm font-semibold text-aida-dark px-1">{selectedNoteIds.size} selected</span>
                         <div className="hidden sm:block w-px h-5 bg-aida-border" />
                         <button onClick={toggleSelectAll} className="px-3 py-1.5 text-xs font-medium text-aida-text-muted hover:text-aida-dark rounded-lg hover:bg-aida-light">
-                            {allFilteredSelected ? 'Deselect all' : `Select all ${filteredNotes.length}`}
+                            {allFilteredSelected ? 'Deselect all' : `Select all ${filteredMeta.length}`}
                         </button>
                         <button onClick={() => setTagModalOpen(true)} disabled={selectedNoteIds.size === 0} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-aida-pink text-white text-xs font-semibold rounded-lg hover:opacity-90 disabled:opacity-40">
                             <FiTag className="w-3.5 h-3.5" /> Add tags

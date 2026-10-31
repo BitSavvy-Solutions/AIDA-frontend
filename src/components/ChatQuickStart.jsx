@@ -1,22 +1,15 @@
 // src/components/ChatQuickStart.jsx
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db as pkbDb } from '../services/pkbSync';
+import { isChatContent } from '../services/chatNote';
 import { DEFAULT_TAGS } from '../config/defaultTags';
 import { FiPlus, FiBook, FiArrowRight } from 'react-icons/fi';
 import ChatList from './ChatList';
 
 const MAX_PREVIEW_CHATS = 5;
-
-const parseChat = (note) => {
-    try {
-        const parsed = JSON.parse(note.content || '{}');
-        return parsed.schema === 'aida/chat' && Array.isArray(parsed.messages);
-    } catch {
-        return false;
-    }
-};
+const EMPTY_META = [];
 
 const ensureTagDoc = async (tag) => {
     const existing = await pkbDb.docs.get(tag.id);
@@ -54,10 +47,32 @@ const ChatQuickStart = () => {
         []
     ) || [];
 
-    const notes = useLiveQuery(
-        () => pkbDb.docs.where('kind').equals('note').and((n) => !n.deleted).toArray(),
-        []
-    ) || [];
+    // Lightweight metadata for chat notes only. Full note content is
+    // loaded transiently by the query but never retained by this
+    // component — only id/title/tagIds/modified are kept.
+    const notesMeta = useLiveQuery(async () => {
+        const notes = await pkbDb.docs
+            .where('kind')
+            .equals('note')
+            .and((n) => !n.deleted)
+            .toArray();
+        const meta = [];
+        for (const n of notes) {
+            if (!isChatContent(n.content)) continue;
+            meta.push({
+                id: n.id,
+                title: n.title || '',
+                tagIds: n.tagIds || [],
+                modified: n.modified || '',
+            });
+        }
+        return meta;
+    }, []) || EMPTY_META;
+
+    // Collapse the preview whenever the tag selection changes.
+    useEffect(() => {
+        setExpandedChats(false);
+    }, [selectedTags]);
 
     // Combine real DB tags with virtual default tags that have not been created yet.
     const allVisibleTags = useMemo(() => {
@@ -78,12 +93,11 @@ const ChatQuickStart = () => {
 
     const usedTagIds = useMemo(() => {
         const ids = new Set();
-        for (const note of notes) {
-            if (!parseChat(note)) continue;
+        for (const note of notesMeta) {
             (note.tagIds || []).forEach((id) => ids.add(id));
         }
         return ids;
-    }, [notes]);
+    }, [notesMeta]);
 
     const displayedTags = useMemo(() => {
         const base = showAllTags
@@ -97,19 +111,17 @@ const ChatQuickStart = () => {
         });
     }, [allVisibleTags, usedTagIds, showAllTags]);
 
-    const chatNotes = useMemo(() => notes.filter(parseChat), [notes]);
-
     const tagTotalCounts = useMemo(() => {
         const map = new Map();
 
-        for (const note of chatNotes) {
+        for (const note of notesMeta) {
             for (const tagId of note.tagIds || []) {
                 map.set(tagId, (map.get(tagId) || 0) + 1);
             }
         }
 
         return map;
-    }, [chatNotes]);
+    }, [notesMeta]);
 
     const tagResultCounts = useMemo(() => {
         const map = new Map();
@@ -120,7 +132,7 @@ const ChatQuickStart = () => {
                 ? selectedArray
                 : [...selectedArray, tag.id];
 
-            const count = chatNotes.filter((note) =>
+            const count = notesMeta.filter((note) =>
                 required.every((id) => (note.tagIds || []).includes(id))
             ).length;
 
@@ -128,20 +140,38 @@ const ChatQuickStart = () => {
         }
 
         return map;
-    }, [chatNotes, allVisibleTags, selectedTags]);
+    }, [notesMeta, allVisibleTags, selectedTags]);
 
-    const matchingChats = useMemo(() => {
+    // IDs of chats matching the selected tags, newest first (metadata only).
+    const matchingIds = useMemo(() => {
         if (selectedTags.size === 0) return [];
 
         const selectedArray = [...selectedTags];
 
-        return notes
-            .filter((note) => {
-                if (!parseChat(note)) return false;
-                return selectedArray.every((tagId) => (note.tagIds || []).includes(tagId));
-            })
-            .sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
-    }, [notes, selectedTags]);
+        return notesMeta
+            .filter((note) =>
+                selectedArray.every((tagId) => (note.tagIds || []).includes(tagId))
+            )
+            .sort((a, b) => (b.modified || '').localeCompare(a.modified || ''))
+            .map((note) => note.id);
+    }, [notesMeta, selectedTags]);
+
+    // Full documents are loaded ONLY for the chats actually displayed.
+    const visibleIdsKey = useMemo(() => {
+        const limit = expandedChats
+            ? matchingIds.length
+            : Math.min(matchingIds.length, MAX_PREVIEW_CHATS);
+        return matchingIds.slice(0, limit).join('\n');
+    }, [matchingIds, expandedChats]);
+
+    const visibleNotesRaw = useLiveQuery(async () => {
+        if (!visibleIdsKey) return [];
+        const docs = await pkbDb.docs.bulkGet(visibleIdsKey.split('\n'));
+        return docs.filter(Boolean);
+    }, [visibleIdsKey]);
+
+    const visibleNotes = visibleNotesRaw || [];
+    const chatsLoading = selectedTags.size > 0 && visibleNotesRaw === undefined;
 
     const tagMap = useMemo(() => {
         const map = new Map();
@@ -273,16 +303,25 @@ const ChatQuickStart = () => {
                 {selectedTags.size > 0 && (
                     <div className="mt-4 pt-4 border-t border-aida-border">
                         <ChatList
-                            notes={expandedChats ? matchingChats : matchingChats.slice(0, MAX_PREVIEW_CHATS)}
+                            notes={visibleNotes}
                             tags={tagMap}
                             onOpenChat={openChat}
                             selectionMode={false}
                             query=""
-                            maxItems={expandedChats ? undefined : MAX_PREVIEW_CHATS}
-                            onShowMore={() => setExpandedChats(true)}
-                            showMoreLabel="Show all"
+                            isLoading={chatsLoading}
                             emptyMessage="No chats found with these tags."
                         />
+                        {!expandedChats && matchingIds.length > MAX_PREVIEW_CHATS && (
+                            <div className="flex justify-center pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setExpandedChats(true)}
+                                    className="px-4 py-2 text-sm font-medium text-aida-pink hover:underline"
+                                >
+                                    Show all ({matchingIds.length - MAX_PREVIEW_CHATS} more)
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -314,7 +353,7 @@ const ChatQuickStart = () => {
                                 Personal Knowledge Bank
                             </span>{' '}
                             <span className="text-aida-text-muted/70">
-                                ({chatNotes.length} chat{chatNotes.length !== 1 ? 's' : ''})
+                                ({notesMeta.length} chat{notesMeta.length !== 1 ? 's' : ''})
                             </span>
                         </span>
                     </span>

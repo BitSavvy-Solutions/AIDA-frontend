@@ -1,95 +1,140 @@
-/* src/pages/AidaPage.jsx */
-import React from 'react';
-import { 
-    FaGithub, 
-    FaBolt,
-    FaCogs,
-    FaCode,
-    FaUsers
-} from 'react-icons/fa';
-import ChatInterface from '../components/aida/ChatInterface';
-import AidaHeader from '../components/aida/AidaHeader';
-import Footer from '../components/Footer';
+// src/components/AidaWidget.jsx
 
-// A new page specifically for AIDA, independent of App.jsx's layout
-const AidaPage = () => {
-    
-    const features = [
-       {
-            icon: FaBolt,
-            title: "Real-time Responses",
-            description: "Get lightning-fast answers from state-of-the-art AI models without the wait."
-       },
-       {
-            icon: FaCogs,
-            title: "Multi-Model Support",
-            description: "Seamlessly switch between different LLMs like GPT, Claude, and Llama to find the best tool for your task."
-       },
-       {
-           icon: FaCode,
-           title: "Truly Open Source",
-           description: "AIDA is built for the community. The entire codebase is on GitHub for you to inspect, modify, and contribute."
-       },
-       {
-           icon: FaUsers,
-           title: "Community Driven",
-           description: "Join a growing community of developers and AI enthusiasts shaping the future of open AI interfaces."
-       }
-    ];
+import React, { useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { createPkbMemoryAdapter } from '../services/pkbMemoryAdapter';
 
-    return (
-        <div className="bg-aida-light min-h-screen">
-            <AidaHeader />
-            <main className="py-12 sm:py-16">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                        {/* Left Side: AIDA Info */}
-                        <div className="text-center lg:text-left">
-                            <h1 className="text-4xl md:text-5xl font-bold text-aida-dark">
-                                AIDA: The Open AI Interface
-                            </h1>
-                            <p className="mt-4 text-lg text-aida-text-muted max-w-xl lg:mx-0 mx-auto">
-                                An open-source, powerful, and free-to-use chat interface designed for developers, researchers, and AI enthusiasts.
-                                Experiment with multiple large language models in one clean interface.
-                            </p>
-                            <div className="mt-8 flex justify-center lg:justify-start">
-                                <a
-                                  href="https://github.com/aitutor-project"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center px-6 py-3 bg-gray-800 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors"
-                                >
-                                    <FaGithub className="w-5 h-5 mr-2" />
-                                    View on GitHub
-                                </a>
-                            </div>
+const WIDGET_CONTAINER_ID = 'aida-global-widget-container';
 
-                             {/* Features */}
-                            <div className="mt-12 space-y-8">
-                                {features.map((feature, index) => (
-                                    <div key={index} className="flex items-start space-x-4">
-                                        <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-[#FF5F90]/20 to-red-500/20 text-aida-pink rounded-lg flex items-center justify-center">
-                                            <feature.icon className="w-6 h-6" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-lg font-semibold text-aida-dark">{feature.title}</h3>
-                                            <p className="mt-1 text-aida-text-muted">{feature.description}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+const AidaWidget = () => {
+    const { user, isAuthenticated, authLoading, apiToken } = useAuth();
 
-                        {/* Right Side: Chat Interface */}
-                        <div className="w-full">
-                            <ChatInterface />
-                        </div>
-                    </div>
-                </div>
-            </main>
-            <Footer />
-        </div>
-    );
+    useEffect(() => {
+        if (authLoading || typeof window.AidaWidget === 'undefined') {
+            return;
+        }
+
+        // The adapter is created inside the effect (not useMemo) so its
+        // database subscriptions are always paired with a cleanup.
+        const memoryAdapter = createPkbMemoryAdapter();
+
+        let widgetUser = { email: 'demo@example.com', name: 'Guest' };
+
+        if (isAuthenticated && user) {
+            console.log(`[AIDA] Rendering widget for authenticated user: ${user.id}`);
+            widgetUser = {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                apiToken: apiToken || null,
+            };
+        } else {
+            console.log('[AIDA] Rendering widget for anonymous user.');
+        }
+
+        const container = document.getElementById(WIDGET_CONTAINER_ID);
+
+        if (!container) {
+            console.warn(`[AIDA] Container #${WIDGET_CONTAINER_ID} not found.`);
+            memoryAdapter.dispose();
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            try {
+                window.AidaWidget.render(`#${WIDGET_CONTAINER_ID}`, {
+                    language: 'en',
+                    user: widgetUser,
+                    memoryAdapter,
+                    historyUrl: '/pkb',
+                    translations: {
+                        transcribing: 'Transcribing...',
+                        inputPlaceholder: 'Type a message to Aida...'
+                    },
+                    features: {
+                        resizable: true,
+                        modelSelection: true,
+                        voiceInput: true,
+                        webSearch: true,
+                        imageUpload: true,
+                        retryMessage: true,
+                        customInstructions: true,
+                        historyProjects: true,
+                        getPageContext: async () => {
+                            console.log("[AIDA] Extracting page context...");
+
+                            let textContent = "";
+                            let fileName = `${document.title || 'AIDA Page'} Context.txt`;
+
+                            // 1. Check if we are on the Draw page and Excalidraw is active
+                            if (window.excalidrawAPI) {
+                                console.log("[AIDA] Excalidraw detected, extracting raw JSON content...");
+
+                                const elements = window.excalidrawAPI.getSceneElements()
+                                    .filter(el => !el.isDeleted && el.type !== 'image');
+
+                                const appState = window.excalidrawAPI.getAppState();
+
+                                const excalidrawJSON = {
+                                    type: "excalidraw",
+                                    version: 2,
+                                    source: "https://excalidraw.com",
+                                    elements: elements,
+                                    appState: {
+                                        gridSize: appState.gridSize || 20,
+                                        gridStep: appState.gridStep || 5,
+                                        gridModeEnabled: appState.gridModeEnabled || false,
+                                        viewBackgroundColor: appState.viewBackgroundColor || "#ffffff",
+                                        lockedMultiSelections: {}
+                                    },
+                                    files: {}
+                                };
+
+                                textContent = JSON.stringify(excalidrawJSON, null, 2);
+                                fileName = "Excalidraw_Canvas.json";
+                            }
+                            // 2. Fallback to standard DOM extraction for other pages
+                            else {
+                                const contentElement = document.querySelector('main') || document.body;
+                                textContent = contentElement.innerText;
+                            }
+
+                            return {
+                                name: fileName,
+                                content: textContent
+                            };
+                        },
+                        paymentLink: {
+                            show: true,
+                            url: '/account',
+                            text: '',
+                        }
+                    }
+                });
+                console.log('[AIDA] Widget rendered successfully.');
+            } catch (e) {
+                console.error('[AIDA] Failed to render widget:', e);
+            }
+        }, 50);
+
+        return () => {
+            clearTimeout(timer);
+            // Best-effort unmount: older widget bundles may not expose an
+            // unmount API, in which case re-rendering behaves exactly as
+            // before. Adapter disposal below is safe regardless because
+            // its data methods keep working after dispose().
+            try {
+                if (typeof window.AidaWidget?.unmount === 'function') {
+                    window.AidaWidget.unmount(`#${WIDGET_CONTAINER_ID}`);
+                }
+            } catch (e) {
+                console.warn('[AIDA] Widget unmount failed:', e);
+            }
+            memoryAdapter.dispose();
+        };
+    }, [isAuthenticated, user, authLoading, apiToken]);
+
+    return null;
 };
 
-export default AidaPage;
+export default AidaWidget;
