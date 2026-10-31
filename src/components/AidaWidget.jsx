@@ -1,6 +1,6 @@
 // src/components/AidaWidget.jsx
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { createPkbMemoryAdapter } from '../services/pkbMemoryAdapter';
 
@@ -8,12 +8,15 @@ const WIDGET_CONTAINER_ID = 'aida-global-widget-container';
 
 const AidaWidget = () => {
     const { user, isAuthenticated, authLoading, apiToken } = useAuth();
-    const memoryAdapter = useMemo(() => createPkbMemoryAdapter(), []);
 
     useEffect(() => {
         if (authLoading || typeof window.AidaWidget === 'undefined') {
             return;
         }
+
+        // The adapter is created inside the effect (not useMemo) so its
+        // database subscriptions are always paired with a cleanup.
+        const memoryAdapter = createPkbMemoryAdapter();
 
         let widgetUser = { email: 'demo@example.com', name: 'Guest' };
 
@@ -33,6 +36,7 @@ const AidaWidget = () => {
 
         if (!container) {
             console.warn(`[AIDA] Container #${WIDGET_CONTAINER_ID} not found.`);
+            memoryAdapter.dispose();
             return;
         }
 
@@ -113,8 +117,22 @@ const AidaWidget = () => {
             }
         }, 50);
 
-        return () => clearTimeout(timer);
-    }, [isAuthenticated, user, authLoading, apiToken, memoryAdapter]);
+        return () => {
+            clearTimeout(timer);
+            // Best-effort unmount: older widget bundles may not expose an
+            // unmount API, in which case re-rendering behaves exactly as
+            // before. Adapter disposal below is safe regardless because
+            // its data methods keep working after dispose().
+            try {
+                if (typeof window.AidaWidget?.unmount === 'function') {
+                    window.AidaWidget.unmount(`#${WIDGET_CONTAINER_ID}`);
+                }
+            } catch (e) {
+                console.warn('[AIDA] Widget unmount failed:', e);
+            }
+            memoryAdapter.dispose();
+        };
+    }, [isAuthenticated, user, authLoading, apiToken]);
 
     return null;
 };
