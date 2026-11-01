@@ -327,25 +327,74 @@ const PkbPage = () => {
         });
     }, [meta, dateRange, selectedTagIds, hasQuery, searchData, sort, messageCounts]);
 
-    // Full documents for the visible page only (max PAGE_SIZE * page records).
-    const pageIds = useMemo(() => {
-        const limit = page * PAGE_SIZE;
-        const ids = [];
-        for (let i = 0; i < filteredMeta.length && i < limit; i += 1) {
-            ids.push(filteredMeta[i].id);
-        }
-        return ids;
+    // Lightweight display notes for the visible page only. Full documents
+    // are loaded transiently, parsed, and discarded so memory stays bounded.
+    const [displayNotes, setDisplayNotes] = useState([]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadNotes = async () => {
+            const limit = page * PAGE_SIZE;
+            const ids = [];
+            for (let i = 0; i < filteredMeta.length && i < limit; i += 1) {
+                ids.push(filteredMeta[i].id);
+            }
+
+            if (ids.length === 0) {
+                setDisplayNotes([]);
+                return;
+            }
+
+            const docs = await pkbDb.docs.bulkGet(ids);
+            const parsed = docs.filter(Boolean).map((note) => {
+                let preview = '';
+                let msgCount = 0;
+
+                if (isChatContent(note.content)) {
+                    try {
+                        const parsedContent = JSON.parse(note.content);
+                        const messages = Array.isArray(parsedContent.messages)
+                            ? parsedContent.messages
+                            : [];
+                        msgCount = messages.length;
+                        const firstUser = messages.find(
+                            (m) => m.sender === 'user' && (m.text || '').trim()
+                        );
+                        preview = firstUser?.text?.slice(0, 150) || '';
+                    } catch {
+                        // ignore malformed content
+                    }
+                } else {
+                    preview = (note.content || '').slice(0, 150);
+                }
+
+                return {
+                    id: note.id,
+                    kind: 'note',
+                    title: note.title || '',
+                    tagIds: note.tagIds || [],
+                    resourceIds: note.resourceIds || [],
+                    modified: note.modified || '',
+                    created: note.created || '',
+                    lastActivity: note.modified || note.created || '',
+                    isChat: isChatContent(note.content),
+                    preview,
+                    msgCount,
+                };
+            });
+
+            if (!cancelled) {
+                setDisplayNotes(parsed);
+            }
+        };
+
+        loadNotes();
+
+        return () => {
+            cancelled = true;
+        };
     }, [filteredMeta, page]);
-
-    const pageIdsKey = useMemo(() => pageIds.join('\n'), [pageIds]);
-
-    const pageNotesRaw = useLiveQuery(async () => {
-        if (pageIds.length === 0) return [];
-        const docs = await pkbDb.docs.bulkGet(pageIds);
-        return docs.filter(Boolean);
-    }, [pageIdsKey]);
-
-    const pageNotes = pageNotesRaw || [];
 
     const matchesMap = searchData?.matchesMap || EMPTY_MATCHES_MAP;
 
@@ -695,7 +744,7 @@ const PkbPage = () => {
                 ) : (
                     <>
                         <ChatList
-                            notes={pageNotes}
+                            notes={displayNotes}
                             tags={tagById}
                             onOpenChat={(id) => window.dispatchEvent(new CustomEvent('aida-open-chat', { detail: { chatId: id } }))}
                             selectionMode={selectionMode}
@@ -714,10 +763,9 @@ const PkbPage = () => {
                                 <button
                                     type="button"
                                     onClick={() => setPage((p) => p + 1)}
-                                    disabled={pageNotesRaw === undefined}
                                     className="px-4 py-2 text-sm font-medium text-aida-pink hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Load more ({filteredMeta.length - pageNotes.length} remaining)
+                                    Load more ({filteredMeta.length - displayNotes.length} remaining)
                                 </button>
                             </div>
                         )}

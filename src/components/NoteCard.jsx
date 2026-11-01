@@ -18,6 +18,9 @@ export const parseNoteContent = (note) => {
 };
 
 export const noteLastActivity = (note) => {
+    if (note.lastActivity) {
+        return new Date(note.lastActivity).getTime();
+    }
     if (note.kind === 'note') {
         const { messages } = parseNoteContent(note);
         let ts = 0;
@@ -152,13 +155,21 @@ const NoteCard = React.memo(function NoteCard({
     onToggleMatches,
     onOpenChat,
 }) {
+    const isLightweight = note.isChat !== undefined;
     const { kind, messages } = parseNoteContent(note);
-    const isChat = kind === 'chat';
-    const firstUser = isChat
+    const isChat = isLightweight ? note.isChat : kind === 'chat';
+    const firstUser = isChat && !isLightweight
         ? messages.find((m) => m.sender === 'user' && (m.text || '').trim())
         : null;
-    const preview = firstUser?.text?.slice(0, 150) || (note.content || '').slice(0, 150);
-    const msgCount = messages.length;
+
+    const preview = isLightweight
+        ? note.preview
+        : (firstUser?.text?.slice(0, 150) || (note.content || '').slice(0, 150));
+
+    const msgCount = isLightweight
+        ? note.msgCount
+        : (isChat ? messages.length : 0);
+
     const visibleMatches = isExpanded ? matches : matches.slice(0, MAX_VISIBLE_MATCHES);
     const capped = matches.length >= MAX_MATCHES_PER_NOTE;
 
