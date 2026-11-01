@@ -1,5 +1,5 @@
 // src/pages/PkbPage.jsx
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
     FiSearch, FiCalendar, FiTag, FiX,
@@ -160,8 +160,6 @@ const PkbPage = () => {
     const [toast, setToast] = useState(null);
 
     const [page, setPage] = useState(1);
-    const [isLoadingMore, setIsLoadingMore] = useState(false);
-    const sentinelRef = useRef(null);
 
     // Clean up any legacy localStorage keys left by earlier implementations.
     useEffect(() => {
@@ -205,6 +203,7 @@ const PkbPage = () => {
             .equals('note')
             .and((n) => !n.deleted)
             .toArray();
+
         return notes.map((n) => ({
             id: n.id,
             title: n.title || '',
@@ -213,7 +212,6 @@ const PkbPage = () => {
             modified: n.modified || '',
             created: n.created || '',
             ts: Date.parse(n.modified || n.created || '') || 0,
-            isChat: isChatContent(n.content),
         }));
     }, []);
 
@@ -237,6 +235,10 @@ const PkbPage = () => {
 
     // Full-content search scan. Runs ONLY while a query is active and
     // retains only the match snippets, never the note contents.
+    //
+    // note: `notesMeta` is deliberately NOT a dependency here. useLiveQuery
+    // already watches the underlying Dexie table, so adding the metadata
+    // array caused a re-scan of every note on every mutation.
     const searchData = useLiveQuery(async () => {
         const q = debouncedQuery.trim().toLowerCase();
         if (!q) return null;
@@ -268,9 +270,10 @@ const PkbPage = () => {
         }
 
         return { matchingIds, matchesMap };
-    }, [debouncedQuery, notesMeta]);
+    }, [debouncedQuery]);
 
     // Message counts are parsed only when the "Most messages" sort is active.
+    // Same reasoning as above: no `notesMeta` dependency.
     const messageCounts = useLiveQuery(async () => {
         if (sort !== 'mostMessages') return null;
 
@@ -294,7 +297,7 @@ const PkbPage = () => {
             }
         }
         return counts;
-    }, [sort, notesMeta]);
+    }, [sort]);
 
     const filteredMeta = useMemo(() => {
         let result = meta;
@@ -324,7 +327,7 @@ const PkbPage = () => {
         });
     }, [meta, dateRange, selectedTagIds, hasQuery, searchData, sort, messageCounts]);
 
-    // Full documents for the visible page only (max PAGE_SIZE records).
+    // Full documents for the visible page only (max PAGE_SIZE * page records).
     const pageIds = useMemo(() => {
         const limit = page * PAGE_SIZE;
         const ids = [];
@@ -336,16 +339,13 @@ const PkbPage = () => {
 
     const pageIdsKey = useMemo(() => pageIds.join('\n'), [pageIds]);
 
-    const pageNotes = useLiveQuery(async () => {
+    const pageNotesRaw = useLiveQuery(async () => {
         if (pageIds.length === 0) return [];
         const docs = await pkbDb.docs.bulkGet(pageIds);
         return docs.filter(Boolean);
-    }, [pageIdsKey]) || [];
-
-    // Re-arm the infinite-scroll sentinel once the new page has loaded.
-    useEffect(() => {
-        setIsLoadingMore(false);
     }, [pageIdsKey]);
+
+    const pageNotes = pageNotesRaw || [];
 
     const matchesMap = searchData?.matchesMap || EMPTY_MATCHES_MAP;
 
@@ -510,17 +510,6 @@ const PkbPage = () => {
     const isSearching =
         searchQuery.trim() !== debouncedQuery.trim() ||
         (hasQuery && searchData === undefined);
-
-    useEffect(() => {
-        if (!hasMore || isLoadingMore) return;
-        const node = sentinelRef.current;
-        if (!node) return;
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) { setIsLoadingMore(true); setPage((p) => p + 1); }
-        }, { rootMargin: '400px' });
-        observer.observe(node);
-        return () => observer.disconnect();
-    }, [hasMore, isLoadingMore]);
 
     return (
         <div className="min-h-screen bg-aida-light">
@@ -721,18 +710,15 @@ const PkbPage = () => {
                             emptyMessage=""
                         />
                         {hasMore && (
-                            <div ref={sentinelRef} className="py-4 flex justify-center">
-                                {isLoadingMore ? (
-                                    <div className="flex items-center gap-2 text-sm text-aida-text-muted"><FiLoader className="w-4 h-4 animate-spin text-aida-pink" /> Loading more...</div>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => { setIsLoadingMore(true); setPage((p) => p + 1); }}
-                                        className="px-4 py-2 text-sm font-medium text-aida-pink hover:underline"
-                                    >
-                                        Load more ({filteredMeta.length - pageNotes.length} remaining)
-                                    </button>
-                                )}
+                            <div className="py-4 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setPage((p) => p + 1)}
+                                    disabled={pageNotesRaw === undefined}
+                                    className="px-4 py-2 text-sm font-medium text-aida-pink hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Load more ({filteredMeta.length - pageNotes.length} remaining)
+                                </button>
                             </div>
                         )}
                     </>
